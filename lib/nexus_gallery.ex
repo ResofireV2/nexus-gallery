@@ -30,7 +30,7 @@ defmodule NexusGallery do
 
   @impl true
   def routes do
-    [{"/api", NexusGallery.ApiRouter, []}]
+    [{"/", NexusGallery.ApiRouter, []}]
   end
 
   # ---------------------------------------------------------------------------
