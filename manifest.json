@@ -1,0 +1,239 @@
+{
+  "$schema": "https://YOUR-NEXUS-HOST/manifest_schema.json",
+  "manifest_version": 2,
+
+  "name":        "Gallery",
+  "slug":        "nexus-gallery",
+  "version":     "0.1.0",
+  "module":      "NexusGallery",
+  "description": "A community media gallery supporting images, videos, and embeds with collections, ratings, comments, reactions, and subscriptions.",
+  "author":      "billyrayfoss",
+  "homepage":    "https://github.com/billyrayfoss/nexus-gallery",
+  "repository":  "https://github.com/billyrayfoss/nexus-gallery",
+  "license":     "MIT",
+  "tags":        ["gallery", "media", "images"],
+  "logo_url":    "/ext/nexus-gallery/assets/logo.webp",
+  "banner_url":  "/ext/nexus-gallery/assets/banner.webp",
+  "js_bundle":   "nexus-gallery.js",
+
+  "settings_schema": {
+    "gallery_enabled": {
+      "type":        "boolean",
+      "label":       "Gallery enabled",
+      "default":     true,
+      "description": "Show Gallery in the Explore sidebar and make all routes accessible."
+    },
+    "ratings_enabled": {
+      "type":        "boolean",
+      "label":       "Ratings enabled",
+      "default":     true,
+      "description": "Allow members to give 1–5 star ratings on images, videos, and collections."
+    },
+    "comments_enabled": {
+      "type":        "boolean",
+      "label":       "Comments enabled",
+      "default":     true,
+      "description": "Allow members to comment on gallery items and collections."
+    },
+    "reactions_enabled": {
+      "type":        "boolean",
+      "label":       "Reactions enabled",
+      "default":     true,
+      "description": "Allow members to react to gallery items and collections with emoji."
+    },
+    "videos_enabled": {
+      "type":        "boolean",
+      "label":       "Video uploads enabled",
+      "default":     false,
+      "description": "Allow members to upload video files (MP4, WebM). Disabled by default — requires sufficient storage."
+    },
+    "moderation_queue_enabled": {
+      "type":        "boolean",
+      "label":       "Moderation queue",
+      "default":     false,
+      "description": "New uploads go into a pending queue and require admin approval before appearing publicly."
+    },
+    "harvest_enabled": {
+      "type":        "boolean",
+      "label":       "Image harvest enabled",
+      "default":     false,
+      "description": "Scan new and edited posts for embedded images and create draft gallery items automatically."
+    },
+    "max_tags_per_item": {
+      "type":        "number",
+      "label":       "Max tags per item",
+      "default":     5,
+      "description": "Maximum number of tags a member can apply to a single image, video, or embed."
+    },
+    "max_collection_size": {
+      "type":        "number",
+      "label":       "Max collection size",
+      "default":     100,
+      "description": "Maximum number of items a collection can contain."
+    },
+    "items_per_page": {
+      "type":    "select",
+      "label":   "Items per page",
+      "default": "36",
+      "options": [
+        {"value": "24", "label": "24"},
+        {"value": "36", "label": "36"},
+        {"value": "48", "label": "48"},
+        {"value": "60", "label": "60"}
+      ]
+    },
+    "max_video_size_mb": {
+      "type":        "number",
+      "label":       "Max video size (MB)",
+      "default":     100,
+      "description": "Per-file size cap for video uploads. Nexus's global upload limit also applies."
+    }
+  },
+
+  "permissions": [
+    {
+      "key":     "can_view_gallery",
+      "label":   "View the gallery",
+      "default": "everyone"
+    },
+    {
+      "key":     "can_upload_image",
+      "label":   "Upload images",
+      "default": "member"
+    },
+    {
+      "key":     "can_upload_video",
+      "label":   "Upload videos",
+      "default": "member"
+    },
+    {
+      "key":     "can_submit_embed",
+      "label":   "Submit video embeds",
+      "default": "member"
+    },
+    {
+      "key":     "can_create_collection",
+      "label":   "Create collections",
+      "default": "member"
+    },
+    {
+      "key":     "can_comment",
+      "label":   "Comment on gallery items and collections",
+      "default": "member"
+    },
+    {
+      "key":     "can_rate",
+      "label":   "Rate gallery items and collections",
+      "default": "member"
+    },
+    {
+      "key":     "can_react",
+      "label":   "React to gallery items and collections",
+      "default": "member"
+    },
+    {
+      "key":     "can_subscribe",
+      "label":   "Follow items, collections, and tags",
+      "default": "member"
+    },
+    {
+      "key":     "can_feature_item",
+      "label":   "Feature and unfeature gallery items",
+      "default": "moderator"
+    },
+    {
+      "key":     "can_manage_gallery",
+      "label":   "Manage gallery settings, tags, and harvest config",
+      "default": "admin"
+    }
+  ],
+
+  "hooks": [
+    {"event": "post_created", "priority": 50},
+    {"event": "post_updated", "priority": 50}
+  ],
+
+  "notification_types": [
+    {
+      "key":         "gallery_comment",
+      "label":       "Gallery comment",
+      "description": "Someone commented on your gallery item or collection.",
+      "icon":        "fa-comment",
+      "channels":    ["web", "email"],
+      "default_preferences": {"web": true, "email": false}
+    },
+    {
+      "key":         "gallery_rating",
+      "label":       "Gallery rating",
+      "description": "Someone rated your gallery item or collection.",
+      "icon":        "fa-star",
+      "channels":    ["web", "email"],
+      "default_preferences": {"web": true, "email": false}
+    },
+    {
+      "key":         "gallery_new_image",
+      "label":       "New gallery image",
+      "description": "A new image was added to a tag you follow.",
+      "icon":        "fa-images",
+      "channels":    ["web", "email"],
+      "default_preferences": {"web": true, "email": false}
+    }
+  ],
+
+  "routes": [
+    {"path": "/",                    "title": "Gallery"},
+    {"path": "/:uuid",               "title": "Gallery item"},
+    {"path": "/collection/:slug",    "title": "Collection"},
+    {"path": "/tag/:slug",           "title": "Gallery tag"},
+    {"path": "/user/:username",      "title": "Gallery uploads"},
+    {"path": "/new/:uuid",           "title": "New gallery item"}
+  ],
+
+  "admin_panel": {
+    "label": "Gallery",
+    "icon":  "fa-images"
+  },
+
+  "explore": {
+    "label": "Gallery",
+    "icon":  "fa-images",
+    "path":  "/"
+  },
+
+  "right_widgets": [
+    {
+      "id":       "gallery-stats",
+      "label":    "Gallery stats",
+      "scope":    "extension",
+      "priority": 10
+    },
+    {
+      "id":       "gallery-top-rated",
+      "label":    "Gallery top rated",
+      "scope":    "extension",
+      "priority": 20
+    },
+    {
+      "id":       "gallery-tags",
+      "label":    "Gallery tags",
+      "scope":    "extension",
+      "priority": 30
+    },
+    {
+      "id":       "gallery-top-uploaders",
+      "label":    "Gallery top uploaders",
+      "scope":    "extension",
+      "priority": 40
+    }
+  ],
+
+  "profile_tabs": [
+    {
+      "id":         "gallery-uploads",
+      "label":      "Gallery",
+      "icon":       "fa-images",
+      "visibility": "always",
+      "priority":   50
+    }
+  ]
+}
