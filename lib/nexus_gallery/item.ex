@@ -9,7 +9,7 @@ defmodule NexusGallery.Item do
   schema "nexus_gallery_items" do
     field :user_id,      :binary_id
     field :title,        :string
-    field :description,  :text
+    field :description,  :string
     field :media_type,   :string, default: "image"
     field :is_draft,     :boolean, default: true
     field :is_featured,  :boolean, default: false
