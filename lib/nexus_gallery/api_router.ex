@@ -91,8 +91,10 @@ defmodule NexusGallery.ApiRouter do
       permissions:       resolved,
       videos_enabled:    s["videos_enabled"] == true,
       embeds_enabled:    s["embeds_enabled"] != false,
-      ratings_enabled:   s["ratings_enabled"] != false,
-      reactions_enabled: s["reactions_enabled"] != false
+      ratings_enabled:       s["ratings_enabled"] != false,
+      reactions_enabled:     s["reactions_enabled"] != false,
+      block_self_ratings:    s["block_self_ratings"] != false,
+      block_self_reactions:  s["block_self_reactions"] != false
     })
   end
 
@@ -398,6 +400,16 @@ defmodule NexusGallery.ApiRouter do
         true ->
           case Ecto.UUID.dump(item_id_str) do
             {:ok, id_bin} ->
+              s = settings()
+              block_self = s["block_self_ratings"] != false
+              item_owner = Nexus.Repo.one(
+                Ecto.Query.from i in NexusGallery.Item,
+                  where: i.id == type(^item_id_str, :binary_id),
+                  select: i.user_id
+              )
+              if block_self and item_owner == user.id do
+                json_resp(conn, 403, %{error: "You cannot rate your own items"})
+              else
               # Delete existing rating from this user for this item
               Nexus.Repo.delete_all(
                 Ecto.Query.from r in "nexus_gallery_ratings",
@@ -419,6 +431,7 @@ defmodule NexusGallery.ApiRouter do
               }])
               stats = rating_stats(id_bin, "item")
               json_resp(conn, 200, Map.put(stats, :my_rating, value))
+              end  # end self-block else
             :error ->
               json_resp(conn, 404, %{error: "Item not found"})
           end
@@ -487,47 +500,80 @@ defmodule NexusGallery.ApiRouter do
       else
         case Ecto.UUID.dump(item_id_str) do
           {:ok, id_bin} ->
-            exists = Nexus.Repo.aggregate(
-              Ecto.Query.from(r in "nexus_gallery_reactions",
-                where: r.user_id == ^user.id
-                  and r.subject_type == "item"
-                  and r.subject_id == ^id_bin
-                  and r.emoji == ^emoji),
-              :count, :id
-            ) > 0
-            if exists do
-              # Toggle off
-              Nexus.Repo.delete_all(
-                Ecto.Query.from r in "nexus_gallery_reactions",
-                  where: r.user_id == ^user.id
-                    and r.subject_type == "item"
-                    and r.subject_id == ^id_bin
-                    and r.emoji == ^emoji
-              )
+            s = settings()
+            # Check self-reaction block (default: on)
+            block_self = s["block_self_reactions"] != false
+            item_owner = Nexus.Repo.one(
+              Ecto.Query.from i in NexusGallery.Item,
+                where: i.id == type(^item_id_str, :binary_id),
+                select: i.user_id
+            )
+            if block_self and item_owner == user.id do
+              json_resp(conn, 403, %{error: "You cannot react to your own items"})
             else
-              # Toggle on
-              {:ok, reaction_id_bin} = Ecto.UUID.dump(Ecto.UUID.generate())
-              now = DateTime.utc_now() |> DateTime.truncate(:second)
-              Nexus.Repo.insert_all("nexus_gallery_reactions", [%{
-                id:           reaction_id_bin,
-                user_id:      user.id,
-                subject_type: "item",
-                subject_id:   id_bin,
-                emoji:        emoji,
-                inserted_at:  now,
-                updated_at:   now
-              }])
-            end
-            counts = reaction_counts(id_bin, "item")
-            mine =
-              Nexus.Repo.all(
-                Ecto.Query.from r in "nexus_gallery_reactions",
+              # Exclusive reactions: one per user per item.
+              # If user already reacted with THIS emoji, toggle it off.
+              # If user reacted with a DIFFERENT emoji, replace it.
+              current_emoji = Nexus.Repo.one(
+                Ecto.Query.from(r in "nexus_gallery_reactions",
                   where: r.user_id == ^user.id
                     and r.subject_type == "item"
                     and r.subject_id == ^id_bin,
-                  select: r.emoji
+                  select: r.emoji)
               )
-            json_resp(conn, 200, %{counts: counts, mine: mine})
+              cond do
+                current_emoji == emoji ->
+                  # Same emoji clicked — toggle off
+                  Nexus.Repo.delete_all(
+                    Ecto.Query.from r in "nexus_gallery_reactions",
+                      where: r.user_id == ^user.id
+                        and r.subject_type == "item"
+                        and r.subject_id == ^id_bin
+                  )
+                current_emoji != nil ->
+                  # Different emoji — replace existing
+                  Nexus.Repo.delete_all(
+                    Ecto.Query.from r in "nexus_gallery_reactions",
+                      where: r.user_id == ^user.id
+                        and r.subject_type == "item"
+                        and r.subject_id == ^id_bin
+                  )
+                  {:ok, reaction_id_bin} = Ecto.UUID.dump(Ecto.UUID.generate())
+                  now = DateTime.utc_now() |> DateTime.truncate(:second)
+                  Nexus.Repo.insert_all("nexus_gallery_reactions", [%{
+                    id:           reaction_id_bin,
+                    user_id:      user.id,
+                    subject_type: "item",
+                    subject_id:   id_bin,
+                    emoji:        emoji,
+                    inserted_at:  now,
+                    updated_at:   now
+                  }])
+                true ->
+                  # No existing reaction — insert new
+                  {:ok, reaction_id_bin} = Ecto.UUID.dump(Ecto.UUID.generate())
+                  now = DateTime.utc_now() |> DateTime.truncate(:second)
+                  Nexus.Repo.insert_all("nexus_gallery_reactions", [%{
+                    id:           reaction_id_bin,
+                    user_id:      user.id,
+                    subject_type: "item",
+                    subject_id:   id_bin,
+                    emoji:        emoji,
+                    inserted_at:  now,
+                    updated_at:   now
+                  }])
+              end
+              counts = reaction_counts(id_bin, "item")
+              mine =
+                Nexus.Repo.all(
+                  Ecto.Query.from r in "nexus_gallery_reactions",
+                    where: r.user_id == ^user.id
+                      and r.subject_type == "item"
+                      and r.subject_id == ^id_bin,
+                    select: r.emoji
+                )
+              json_resp(conn, 200, %{counts: counts, mine: mine})
+            end  # end self-block else
           :error ->
             json_resp(conn, 404, %{error: "Item not found"})
         end

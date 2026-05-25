@@ -979,7 +979,9 @@
           value:  rating.my_rating,
           avg:    rating.avg,
           count:  rating.count,
-          onRate: perms.permissions && perms.permissions.can_rate ? handleRate : null,
+          onRate: (perms.permissions && perms.permissions.can_rate &&
+                   !(perms.block_self_ratings && item && currentUser && item.user_id === currentUser.id))
+                   ? handleRate : null,
         })
       ),
 
@@ -989,7 +991,9 @@
         React.createElement(ReactionStrip, {
           counts:  reactions.counts,
           mine:    reactions.mine,
-          onReact: perms.permissions && perms.permissions.can_react ? handleReact : null,
+          onReact: (perms.permissions && perms.permissions.can_react &&
+                    !(perms.block_self_reactions && item && currentUser && item.user_id === currentUser.id))
+                    ? handleReact : null,
         })
       ),
 
@@ -1307,6 +1311,8 @@
             { key: "ratings_enabled",          label: "Ratings enabled",       type: "boolean", hint: "Allow members to give 1–5 star ratings on images, videos, and collections." },
             { key: "comments_enabled",         label: "Comments enabled",      type: "boolean", hint: "Allow members to comment on gallery items and collections." },
             { key: "reactions_enabled",        label: "Reactions enabled",     type: "boolean", hint: "Allow members to react to gallery items and collections with emoji." },
+            { key: "block_self_reactions",     label: "Block self-reactions",  type: "boolean", hint: "Prevent members from reacting to their own gallery items. Enabled by default." },
+            { key: "block_self_ratings",       label: "Block self-ratings",    type: "boolean", hint: "Prevent members from rating their own gallery items. Enabled by default." },
             { key: "moderation_queue_enabled", label: "Moderation queue",      type: "boolean", hint: "New uploads go into a pending queue and require admin approval before appearing publicly." },
             { key: "max_tags_per_item",        label: "Max tags per item",     type: "number",  hint: "Maximum number of tags a member can apply to a single item." },
             { key: "max_collection_size",      label: "Max collection size",   type: "number",  hint: "Maximum number of items a collection can contain." },
