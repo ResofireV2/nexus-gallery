@@ -220,7 +220,7 @@ defmodule NexusGallery.ApiRouter do
         json_resp(conn, 403, %{error: "Video uploads are not enabled on this forum"})
       else
         case Items.create_draft(user.id, media_type) do
-          {:ok, item}         -> json_resp(conn, 201, %{id: item.id, media_type: item.media_type})
+          {:ok, item}         -> json_resp(conn, 201, %{id: uuid_str(item.id), media_type: item.media_type})
           {:error, changeset} -> json_resp(conn, 422, %{errors: format_errors(changeset)})
         end
       end
@@ -416,7 +416,7 @@ defmodule NexusGallery.ApiRouter do
 
   defp tag_json(tag) do
     %{
-      id:           tag.id,
+      id:           uuid_str(tag.id),
       name:         tag.name,
       slug:         tag.slug,
       color:        tag.color,
@@ -441,6 +441,17 @@ defmodule NexusGallery.ApiRouter do
   # -------------------------------------------------------------------------
   # Private helpers
   # -------------------------------------------------------------------------
+
+  # Convert a 16-byte binary UUID to string form for JSON encoding.
+  # Ecto stores :binary_id fields as raw binaries — Jason cannot encode them.
+  defp uuid_str(nil), do: nil
+  defp uuid_str(bin) when is_binary(bin) and byte_size(bin) == 16 do
+    case Ecto.UUID.load(bin) do
+      {:ok, str} -> str
+      :error     -> nil
+    end
+  end
+  defp uuid_str(str) when is_binary(str), do: str
 
   defp format_errors(changeset) do
     Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->

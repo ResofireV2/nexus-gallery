@@ -139,9 +139,22 @@ defmodule NexusGallery.Items do
   # Private — struct to plain map
   # ---------------------------------------------------------------------------
 
+  # Convert binary UUID to string. Ecto stores :binary_id fields as 16-byte
+  # raw binaries in memory. Jason cannot encode raw binaries and will raise
+  # Protocol.UndefinedError. Ecto.UUID.load/1 converts to the standard
+  # "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" string form.
+  defp uuid_str(nil), do: nil
+  defp uuid_str(bin) when is_binary(bin) and byte_size(bin) == 16 do
+    case Ecto.UUID.load(bin) do
+      {:ok, str} -> str
+      :error     -> nil
+    end
+  end
+  defp uuid_str(str) when is_binary(str), do: str
+
   defp to_map(%Item{} = i) do
     %{
-      id:             i.id,
+      id:             uuid_str(i.id),
       user_id:        i.user_id,
       title:          i.title,
       description:    i.description,
@@ -155,15 +168,14 @@ defmodule NexusGallery.Items do
       thumbnail_url:  i.thumbnail_url,
       width:          i.width,
       height:         i.height,
-      upload_id:      i.upload_id,
+      upload_id:      uuid_str(i.upload_id),
       source_post_id: i.source_post_id,
       inserted_at:    i.inserted_at,
       updated_at:     i.updated_at,
     }
   end
 
-  # Fetch tags for an item. Uses type hints on the string table to ensure
-  # Ecto returns properly typed UUID binaries.
+  # Fetch tags for an item.
   defp fetch_tags(item_id) do
     tag_ids =
       from(it in "nexus_gallery_item_tags",
@@ -182,8 +194,7 @@ defmodule NexusGallery.Items do
     end
   end
 
-  # Fetch a single user. Uses fragment("?::text", ...) to cast citext username
-  # to plain text — avoids type inference issues with Ecto string table queries.
+  # Fetch a single user. Uses fragment("?::text", ...) to cast citext username.
   defp fetch_user(nil), do: nil
   defp fetch_user(user_id) do
     Repo.one(
@@ -197,7 +208,6 @@ defmodule NexusGallery.Items do
     )
   end
 
-  # Batch-fetch users for a list of item structs, returns enriched plain maps.
   defp enrich_list(items) when is_list(items) do
     user_ids =
       items
@@ -255,7 +265,7 @@ defmodule NexusGallery.Items do
 
   defp tag_to_map(tag) do
     %{
-      id:           tag.id,
+      id:           uuid_str(tag.id),
       name:         tag.name,
       slug:         tag.slug,
       color:        tag.color,
