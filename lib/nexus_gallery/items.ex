@@ -62,6 +62,17 @@ defmodule NexusGallery.Items do
 
   @doc "Returns item as a plain map with tags and user, or nil."
   def get_item_with_tags(id) do
+    # Increment view_count asynchronously — fire and forget
+    Task.start(fn ->
+      case Ecto.UUID.dump(id) do
+        {:ok, bin} ->
+          Repo.update_all(
+            Ecto.Query.from(i in Item, where: i.id == ^bin),
+            inc: [view_count: 1]
+          )
+        _ -> :ok
+      end
+    end)
     case Repo.get(Item, id) do
       nil  -> nil
       item ->
@@ -121,10 +132,16 @@ defmodule NexusGallery.Items do
     }
   end
 
-  def top_rated(limit \\ 4) do
+  def top_rated(limit \ 4) do
+    ratings_q = Ecto.Query.from(r in "nexus_gallery_ratings",
+      where: r.subject_type == "item",
+      group_by: r.subject_id,
+      select: %{subject_id: r.subject_id, avg: Ecto.Query.fragment("avg(?)", r.value)}
+    )
     from(i in Item,
+      left_join: r in subquery(ratings_q), on: r.subject_id == i.id,
       where: i.is_draft == false,
-      order_by: [desc: i.view_count, desc: i.inserted_at],
+      order_by: [desc: Ecto.Query.coalesce(r.avg, 0.0), desc: i.inserted_at],
       limit: ^limit)
     |> Repo.all()
     |> enrich_list()

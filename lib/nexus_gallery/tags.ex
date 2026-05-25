@@ -14,7 +14,17 @@ defmodule NexusGallery.Tags do
 
   @doc "Returns all tags ordered by position ascending."
   def list_tags do
-    from(t in Tag, order_by: [asc: t.position, asc: t.inserted_at])
+    count_q = Ecto.Query.from(it in "nexus_gallery_item_tags",
+      join: i in NexusGallery.Item, on: i.id == it.item_id,
+      where: i.is_draft == false,
+      group_by: it.tag_id,
+      select: %{tag_id: it.tag_id, count: Ecto.Query.fragment("count(*)")}
+    )
+    from(t in Tag,
+      left_join: c in subquery(count_q), on: c.tag_id == t.id,
+      order_by: [asc: t.position, asc: t.inserted_at],
+      select: %{t | item_count: Ecto.Query.coalesce(c.count, 0)}
+    )
     |> Repo.all()
   end
 
