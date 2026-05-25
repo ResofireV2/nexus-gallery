@@ -91,6 +91,7 @@ defmodule NexusGallery.ApiRouter do
       permissions:       resolved,
       videos_enabled:    parse_bool(s["videos_enabled"], false),
       embeds_enabled:    s["embeds_enabled"] != false,
+      harvest_enabled:   parse_bool(s["harvest_enabled"], false),
       ratings_enabled:       s["ratings_enabled"] == true,
       reactions_enabled:     s["reactions_enabled"] == true,
       block_self_ratings:    s["block_self_ratings"] == true,
@@ -1269,6 +1270,118 @@ defmodule NexusGallery.ApiRouter do
         page:        page,
         total_pages: ceil(max(total, 1) / per)
       })
+    end)
+  end
+
+
+
+  # -------------------------------------------------------------------------
+  # Extension settings (admin only — save harvest_enabled etc.)
+  # -------------------------------------------------------------------------
+
+  patch "/settings" do
+    require_permission(conn, "can_manage_gallery", fn conn ->
+      params   = conn.body_params
+      allowed  = ~w(harvest_enabled)
+      updates  = Map.take(params, allowed)
+      if map_size(updates) == 0 do
+        json_resp(conn, 422, %{error: "No valid settings keys provided"})
+      else
+        ext = Nexus.Extensions.get_extension_by_slug(@slug)
+        case Nexus.Extensions.update_extension_settings(ext, updates) do
+          {:ok, _}         -> json_resp(conn, 200, %{ok: true})
+          {:error, reason} -> json_resp(conn, 500, %{error: inspect(reason)})
+        end
+      end
+    end)
+  end
+
+  # -------------------------------------------------------------------------
+  # Harvest mappings
+  # -------------------------------------------------------------------------
+
+  get "/harvest-mappings" do
+    require_permission(conn, "can_manage_gallery", fn conn ->
+      mappings = Nexus.Repo.all(
+        Ecto.Query.from m in "nexus_gallery_harvest_mappings",
+          order_by: [asc: m.inserted_at],
+          select: %{
+            id:             fragment("?::text", m.id),
+            forum_tag_slug: m.forum_tag_slug,
+            gallery_tag_id: fragment("?::text", m.gallery_tag_id)
+          }
+      )
+      # Enrich with gallery tag names
+      gallery_tag_ids = Enum.map(mappings, & &1.gallery_tag_id) |> Enum.uniq()
+      tags_by_id =
+        if gallery_tag_ids == [] do %{} else
+          Nexus.Repo.all(
+            Ecto.Query.from t in NexusGallery.Tag,
+              where: fragment("?::text", t.id) in ^gallery_tag_ids,
+              select: %{id: fragment("?::text", t.id), name: t.name, color: t.color, slug: t.slug}
+          ) |> Map.new(&{&1.id, &1})
+        end
+      enriched = Enum.map(mappings, fn m ->
+        Map.put(m, :gallery_tag, Map.get(tags_by_id, m.gallery_tag_id))
+      end)
+      json_resp(conn, 200, %{mappings: enriched})
+    end)
+  end
+
+  post "/harvest-mappings" do
+    require_permission(conn, "can_manage_gallery", fn conn ->
+      forum_tag_slug = conn.body_params["forum_tag_slug"]
+      gallery_tag_id = conn.body_params["gallery_tag_id"]
+
+      cond do
+        is_nil(forum_tag_slug) or String.trim(forum_tag_slug) == "" ->
+          json_resp(conn, 422, %{error: "forum_tag_slug is required"})
+        is_nil(gallery_tag_id) ->
+          json_resp(conn, 422, %{error: "gallery_tag_id is required"})
+        true ->
+          forum_slug = String.trim(forum_tag_slug)
+          case Ecto.UUID.dump(gallery_tag_id) do
+            {:ok, gallery_tag_bin} ->
+              # Check for duplicate forum_tag_slug
+              existing = Nexus.Repo.aggregate(
+                Ecto.Query.from(m in "nexus_gallery_harvest_mappings",
+                  where: m.forum_tag_slug == ^forum_slug),
+                :count
+              )
+              if existing > 0 do
+                json_resp(conn, 422, %{error: "A mapping for that forum tag already exists"})
+              else
+                {:ok, id_bin} = Ecto.UUID.dump(Ecto.UUID.generate())
+                now = DateTime.utc_now() |> DateTime.truncate(:second)
+                Nexus.Repo.insert_all("nexus_gallery_harvest_mappings", [%{
+                  id:             id_bin,
+                  forum_tag_slug: forum_slug,
+                  gallery_tag_id: gallery_tag_bin,
+                  inserted_at:    now,
+                  updated_at:     now
+                }])
+                json_resp(conn, 201, %{ok: true})
+              end
+            :error ->
+              json_resp(conn, 422, %{error: "Invalid gallery_tag_id"})
+          end
+      end
+    end)
+  end
+
+  delete "/harvest-mappings/:id" do
+    require_permission(conn, "can_manage_gallery", fn conn ->
+      mapping_id = conn.params["id"]
+      case Ecto.UUID.dump(mapping_id) do
+        {:ok, id_bin} ->
+          Nexus.Repo.delete_all(
+            Ecto.Query.from m in "nexus_gallery_harvest_mappings",
+              where: m.id == ^id_bin
+          )
+          json_resp(conn, 200, %{ok: true})
+        :error ->
+          json_resp(conn, 404, %{error: "Not found"})
+      end
     end)
   end
 

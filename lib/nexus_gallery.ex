@@ -41,9 +41,15 @@ defmodule NexusGallery do
   # ---------------------------------------------------------------------------
 
   @impl true
-  def handle_event("post_created", _payload, _settings), do: :ok
-  def handle_event("post_updated", _payload, _settings), do: :ok
-  def handle_event(_event, _payload, _settings),         do: :ok
+  def handle_event("post_created", %{"post_id" => post_id}, settings) do
+    Task.start(fn -> NexusGallery.Harvest.process_post(post_id, settings) end)
+    :ok
+  end
+  def handle_event("post_updated", %{"post_id" => post_id}, settings) do
+    Task.start(fn -> NexusGallery.Harvest.process_post(post_id, settings) end)
+    :ok
+  end
+  def handle_event(_event, _payload, _settings), do: :ok
 
   # ---------------------------------------------------------------------------
   # Lifecycle

@@ -2620,7 +2620,7 @@
         } },
         { key: "tags",    label: "Tags",    icon: "fa-tag",       render: function () { return React.createElement(TagsTab); } },
         { key: "queue",   label: "Queue",   icon: "fa-clock",     render: function () { return React.createElement(ComingSoonTab, { label: "Moderation queue" }); } },
-        { key: "harvest", label: "Harvest", icon: "fa-seedling",  render: function () { return React.createElement(ComingSoonTab, { label: "Image harvest configuration" }); } },
+        { key: "harvest", label: "Harvest", icon: "fa-seedling",  render: function () { return React.createElement(HarvestTab); } },
         { key: "stats",   label: "Stats",   icon: "fa-chart-bar", render: function () { return React.createElement(ComingSoonTab, { label: "Gallery stats" }); } },
       ]
     });
@@ -2761,6 +2761,171 @@
           className: "btn-ghost", style: { fontSize: 12.5 },
           onClick: function () { load(page + 1); }
         }, React.createElement("i", { className: "fa-solid fa-chevron-right" }))
+      )
+    );
+  }
+
+  // ─── HarvestTab ──────────────────────────────────────────────────────────
+
+  function HarvestTab() {
+    var _mappings  = useState(null);  var mappings  = _mappings[0];  var setMappings  = _mappings[1];
+    var _tags      = useState([]);    var tags      = _tags[0];      var setTags      = _tags[1];
+    var _loading   = useState(true);  var loading   = _loading[0];  var setLoading   = _loading[1];
+    var _enabled   = useState(false); var enabled   = _enabled[0];  var setEnabled   = _enabled[1];
+    var _saving    = useState(false); var saving    = _saving[0];   var setSaving    = _saving[1];
+    var _newSlug   = useState("");    var newSlug   = _newSlug[0];  var setNewSlug   = _newSlug[1];
+    var _newTagId  = useState("");    var newTagId  = _newTagId[0]; var setNewTagId  = _newTagId[1];
+    var _adding    = useState(false); var adding    = _adding[0];   var setAdding    = _adding[1];
+
+    useEffect(function () {
+      Promise.all([
+        apiGet("/harvest-mappings"),
+        apiGet("/tags/public"),
+        apiGet("/permissions")
+      ]).then(function (results) {
+        setMappings(results[0].mappings || []);
+        setTags(results[1].tags || []);
+        setEnabled(!!results[2].harvest_enabled);
+        setLoading(false);
+      }).catch(function () { setLoading(false); });
+    }, []);
+
+    function handleToggleEnabled(val) {
+      setEnabled(val);
+      setSaving(true);
+      apiPatch("/settings", { harvest_enabled: val })
+        .then(function (d) {
+          if (d.ok) toast(val ? "Harvest enabled" : "Harvest disabled");
+          else toast(d.error || "Failed", "err");
+        })
+        .catch(function () { toast("Failed", "err"); })
+        .finally(function () { setSaving(false); });
+    }
+
+    function handleAdd() {
+      var slug = newSlug.trim();
+      if (!slug) { toast("Forum tag slug is required", "err"); return; }
+      if (!newTagId) { toast("Select a gallery tag", "err"); return; }
+      setAdding(true);
+      apiPost("/harvest-mappings", { forum_tag_slug: slug, gallery_tag_id: newTagId })
+        .then(function (d) {
+          if (d.ok) {
+            toast("Mapping added");
+            setNewSlug(""); setNewTagId("");
+            return apiGet("/harvest-mappings").then(function (r) {
+              setMappings(r.mappings || []);
+            });
+          } else {
+            toast(d.error || "Failed", "err");
+          }
+        })
+        .catch(function () { toast("Failed", "err"); })
+        .finally(function () { setAdding(false); });
+    }
+
+    function handleDelete(id) {
+      apiDelete("/harvest-mappings/" + id)
+        .then(function (d) {
+          if (d.ok) {
+            setMappings(function (prev) { return prev.filter(function (m) { return m.id !== id; }); });
+            toast("Mapping removed");
+          } else {
+            toast(d.error || "Failed", "err");
+          }
+        })
+        .catch(function () { toast("Failed", "err"); });
+    }
+
+    if (loading) return React.createElement("div", {
+      style: { padding: "48px 0", textAlign: "center", color: "var(--t5)" }
+    }, React.createElement("i", { className: "fa-solid fa-spinner fa-spin" }));
+
+    var labelStyle = { fontSize: 12, color: "var(--t4)", fontWeight: 500, display: "block", marginBottom: 6 };
+    var inputStyle = { padding: "8px 12px", background: "rgba(255,255,255,0.05)", border: "0.5px solid var(--b2)", borderRadius: 8, color: "var(--t1)", fontSize: 13, outline: "none", fontFamily: "inherit" };
+
+    return React.createElement("div", null,
+      // Enable toggle
+      React.createElement("div", {
+        style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 0", borderBottom: "0.5px solid var(--b1)", marginBottom: 20 }
+      },
+        React.createElement("div", null,
+          React.createElement("div", { style: { fontSize: 13, fontWeight: 500, color: "var(--t1)" } }, "Harvest enabled"),
+          React.createElement("div", { style: { fontSize: 12, color: "var(--t5)", marginTop: 3 } },
+            "Automatically import images from tagged forum posts into the gallery."
+          )
+        ),
+        React.createElement(Toggle, { value: enabled, onChange: handleToggleEnabled, disabled: saving })
+      ),
+
+      // Mappings list
+      React.createElement("div", { style: { marginBottom: 20 } },
+        React.createElement("div", { style: { fontSize: 13, fontWeight: 500, color: "var(--t2)", marginBottom: 12 } },
+          "Tag mappings"
+        ),
+        React.createElement("div", { style: { fontSize: 12, color: "var(--t5)", marginBottom: 12 } },
+          "When a post is tagged with a forum tag slug below, its images are imported into the linked gallery tag."
+        ),
+        mappings && mappings.length === 0 && React.createElement("div", {
+          style: { fontSize: 13, color: "var(--t5)", padding: "16px 0" }
+        }, "No mappings yet."),
+        mappings && mappings.map(function (m) {
+          return React.createElement("div", {
+            key: m.id,
+            style: { display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "0.5px solid var(--b1)" }
+          },
+            React.createElement("div", { style: { flex: 1, fontSize: 13, color: "var(--t2)", fontFamily: "monospace" } },
+              m.forum_tag_slug
+            ),
+            React.createElement("i", { className: "fa-solid fa-arrow-right", style: { fontSize: 11, color: "var(--t5)" } }),
+            m.gallery_tag && React.createElement("div", {
+              style: { display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--t2)" }
+            },
+              React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", background: m.gallery_tag.color, flexShrink: 0 } }),
+              m.gallery_tag.name
+            ),
+            React.createElement("button", {
+              onClick: function () { handleDelete(m.id); },
+              style: { background: "none", border: "none", cursor: "pointer", color: "var(--t5)", fontSize: 13, padding: "2px 6px", marginLeft: "auto" }
+            }, React.createElement("i", { className: "fa-solid fa-trash", style: { color: "var(--red)" } }))
+          );
+        })
+      ),
+
+      // Add mapping form
+      React.createElement("div", {
+        style: { background: "var(--s1)", border: "0.5px solid var(--b1)", borderRadius: 10, padding: 16 }
+      },
+        React.createElement("div", { style: { fontSize: 13, fontWeight: 500, color: "var(--t2)", marginBottom: 12 } }, "Add mapping"),
+        React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" } },
+          React.createElement("div", { style: { flex: 1, minWidth: 160 } },
+            React.createElement("label", { style: labelStyle }, "Forum tag slug"),
+            React.createElement("input", {
+              style: Object.assign({}, inputStyle, { width: "100%", boxSizing: "border-box" }),
+              value: newSlug,
+              placeholder: "e.g. screenshots",
+              onChange: function (e) { setNewSlug(e.target.value); }
+            })
+          ),
+          React.createElement("div", { style: { flex: 1, minWidth: 160 } },
+            React.createElement("label", { style: labelStyle }, "Gallery tag"),
+            React.createElement("select", {
+              style: Object.assign({}, inputStyle, { width: "100%", boxSizing: "border-box" }),
+              value: newTagId,
+              onChange: function (e) { setNewTagId(e.target.value); }
+            },
+              React.createElement("option", { value: "" }, "Select a tag\u2026"),
+              tags.map(function (t) {
+                return React.createElement("option", { key: t.id, value: t.id }, t.name);
+              })
+            )
+          ),
+          React.createElement("button", {
+            className: "btn-primary",
+            style: { fontSize: 12.5, padding: "8px 16px", whiteSpace: "nowrap" },
+            onClick: handleAdd,
+            disabled: adding
+          }, adding ? "Adding\u2026" : "Add mapping")
+        )
       )
     );
   }

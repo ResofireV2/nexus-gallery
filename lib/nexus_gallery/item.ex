@@ -44,4 +44,14 @@ defmodule NexusGallery.Item do
                     :width, :height, :upload_id])
     |> validate_length(:title, max: 200)
   end
+
+  def harvest_changeset(item, attrs) do
+    item
+    |> cast(attrs, [:user_id, :media_type, :title, :description,
+                    :file_url, :original_url, :thumbnail_url,
+                    :width, :height, :is_draft, :source_post_id])
+    |> validate_required([:user_id, :media_type, :file_url, :source_post_id])
+    |> validate_inclusion(:media_type, @valid_media_types)
+    |> validate_length(:title, max: 200)
+  end
 end

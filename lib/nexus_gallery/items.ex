@@ -327,7 +327,26 @@ defmodule NexusGallery.Items do
     }
   end
 
-  defp set_tags(item_id, tag_ids) do
+
+  @doc "Creates a published gallery item from a harvested forum post image."
+  def harvest_item(attrs) do
+    %Item{}
+    |> Item.harvest_changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc "Returns true if a published item already exists for this source_post_id + file_url."
+  def harvested?(source_post_id, file_url) do
+    Repo.aggregate(
+      from(i in Item,
+        where: i.source_post_id == ^source_post_id
+          and i.file_url == ^file_url
+          and i.is_draft == false),
+      :count
+    ) > 0
+  end
+
+  def set_tags(item_id, tag_ids) do
     # Repo.insert_all with a string table has no schema type info — Postgrex
     # receives raw values and its uuid encoder requires 16-byte binaries.
     # Ecto.UUID.dump!/1 converts a string UUID to the required binary form.
