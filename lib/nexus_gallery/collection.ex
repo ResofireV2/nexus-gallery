@@ -18,7 +18,7 @@ defmodule NexusGallery.Collection do
 
   def create_changeset(collection, attrs) do
     collection
-    |> cast(attrs, [:user_id, :title, :slug, :description])
+    |> cast(attrs, [:user_id, :title, :slug, :description, :is_draft])
     |> validate_required([:user_id, :title, :slug])
     |> validate_length(:title, max: 200)
     |> unique_constraint(:slug)

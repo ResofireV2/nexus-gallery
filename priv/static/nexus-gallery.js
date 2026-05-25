@@ -272,7 +272,8 @@
 
     var _showUpload          = useState(false); var showUpload          = _showUpload[0];          var setShowUpload          = _showUpload[1];
     var _showNewCollection   = useState(false); var showNewCollection   = _showNewCollection[0];   var setShowNewCollection   = _showNewCollection[1];
-    var _permissions    = useState({});       var permissions    = _permissions[0];    var setPermissions    = _permissions[1];
+    var _permissions       = useState({});  var permissions       = _permissions[0];       var setPermissions       = _permissions[1];
+    var _gallerySettings   = useState({});  var gallerySettings   = _gallerySettings[0];   var setGallerySettings   = _gallerySettings[1];
     var _items          = useState([]);       var items          = _items[0];          var setItems          = _items[1];
     var _tags           = useState([]);       var tags           = _tags[0];           var setTags           = _tags[1];
     var _loading        = useState(true);     var loading        = _loading[0];        var setLoading        = _loading[1];
@@ -316,6 +317,7 @@
     useEffect(function () {
       Promise.all([apiGet("/permissions"), apiGet("/tags/public")]).then(function (results) {
         if (results[0].permissions) setPermissions(results[0].permissions);
+        if (results[0]) setGallerySettings(results[0]);
         if (results[1].tags)        setTags(results[1].tags);
       }).catch(function () {});
       loadItems(1, sort, activeTag, activeTab, search);
@@ -368,6 +370,7 @@
 
       showNewCollection && React.createElement(NewCollectionModal, {
         onClose: function () { setShowNewCollection(false); },
+        maxCollectionSize: gallerySettings.max_collection_size || 100,
         onCreated: function (coll) {
           setShowNewCollection(false);
           NE.navigate("/ext/" + SLUG + "/collection/" + coll.slug);
@@ -600,28 +603,103 @@
     );
   }
 
-  // ─── NewCollectionModal ───────────────────────────────────────────────────
+  // ─── NewCollectionModal ───────────────────────────────────────────────
 
+  // Two-step modal: Step 1 = title/description, Step 2 = upload images into it.
   function NewCollectionModal(props) {
     var onClose   = props.onClose;
     var onCreated = props.onCreated;
-    var _title    = useState(""); var title    = _title[0]; var setTitle    = _title[1];
-    var _desc     = useState(""); var desc     = _desc[0];  var setDesc     = _desc[1];
-    var _saving   = useState(false); var saving = _saving[0]; var setSaving = _saving[1];
+    var maxSize   = props.maxCollectionSize || 100;
 
+    // Step 1 fields
+    var _title  = useState(""); var title  = _title[0];  var setTitle  = _title[1];
+    var _desc   = useState(""); var desc   = _desc[0];   var setDesc   = _desc[1];
+    var _saving = useState(false); var saving = _saving[0]; var setSaving = _saving[1];
+
+    // Step 2 state
+    var _step    = useState(1);   var step    = _step[0];    var setStep    = _step[1];
+    var _coll    = useState(null);var coll    = _coll[0];    var setColl    = _coll[1];
+    var _entries = useState([]);  var entries = _entries[0]; var setEntries = _entries[1];
+    var inputRef = useRef(null);
+
+    var allDone      = entries.length > 0 && entries.every(function (e) { return e.status === "done"; });
+    var anyUploading = entries.some(function (e) { return e.status === "uploading" || e.status === "pending"; });
+    var atMax        = entries.length >= maxSize;
+
+    // Step 1 — create collection
     function handleCreate() {
       if (!title.trim()) return;
       setSaving(true);
       apiPost("/collections", { title: title.trim(), description: desc.trim() || null })
         .then(function (d) {
           if (d.collection) {
-            onCreated(d.collection);
+            setColl(d.collection);
+            setStep(2);
           } else {
-            toast(d.error || (d.errors && JSON.stringify(d.errors)) || "Failed to create", "err");
+            toast(d.error || "Failed to create", "err");
           }
         })
         .catch(function () { toast("Failed to create collection", "err"); })
         .finally(function () { setSaving(false); });
+    }
+
+    // Step 2 — upload images and add to collection
+    function handleFiles(files) {
+      var arr = Array.from(files).filter(function (f) {
+        return f.type.startsWith("image/");
+      });
+      var available = maxSize - entries.length;
+      arr = arr.slice(0, available);
+      if (!arr.length) return;
+      var idx0 = entries.length;
+      var newEntries = arr.map(function (f) {
+        return { file: f, previewUrl: URL.createObjectURL(f), status: "pending", progress: 0 };
+      });
+      setEntries(function (prev) { return prev.concat(newEntries); });
+      newEntries.forEach(function (entry, i) { startUpload(idx0 + i, entry); });
+    }
+
+    function startUpload(idx, entry) {
+      apiPost("/items/draft", { media_type: "image" })
+        .then(function (d) {
+          if (!d.id) throw new Error(d.error || "Failed to create draft");
+          var draftId = d.id;
+          setEntries(function (prev) {
+            var u = prev.slice(); u[idx] = Object.assign({}, u[idx], { status: "uploading", draftId: draftId }); return u;
+          });
+          return uploadFileXhr(entry.file, draftId, function (pct) {
+            setEntries(function (prev) {
+              var u = prev.slice(); u[idx] = Object.assign({}, u[idx], { progress: pct }); return u;
+            });
+          }).then(function (r) {
+            return apiPatch("/items/" + draftId, {
+              file_url:     r.url,
+              original_url: r.original_url,
+              upload_id:    r.upload ? r.upload.id : null,
+            }).then(function () {
+              return apiPost("/collections/" + coll.slug + "/items", { item_id: draftId })
+                .then(function () {
+                  setEntries(function (prev) {
+                    var u = prev.slice();
+                    u[idx] = Object.assign({}, u[idx], { status: "done", progress: 100, url: r.url });
+                    return u;
+                  });
+                });
+            });
+          });
+        })
+        .catch(function (err) {
+          setEntries(function (prev) {
+            var u = prev.slice(); u[idx] = Object.assign({}, u[idx], { status: "error", progress: 0, error: err.message }); return u;
+          });
+          toast(err.message || "Upload failed", "err");
+        });
+    }
+
+    function handleDrop(e) { e.preventDefault(); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); }
+
+    function handleFinish() {
+      onCreated(coll);
     }
 
     return React.createElement("div", {
@@ -631,48 +709,150 @@
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: 16,
       },
-      onClick: function (e) { if (e.target === e.currentTarget) onClose(); }
+      onClick: function (e) { if (e.target === e.currentTarget && !anyUploading) onClose(); }
     },
       React.createElement("div", {
         style: {
           background: "var(--s1)", borderRadius: 14, padding: 24,
-          width: "100%", maxWidth: 440, border: "0.5px solid var(--b2)",
+          width: "100%", maxWidth: 520, border: "0.5px solid var(--b2)",
+          display: "flex", flexDirection: "column", gap: 0,
         }
       },
+        // Header
         React.createElement("div", {
           style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }
         },
-          React.createElement("span", { style: { fontSize: 16, fontWeight: 600, color: "var(--t1)" } }, "New collection"),
+          React.createElement("span", { style: { fontSize: 16, fontWeight: 600, color: "var(--t1)" } },
+            step === 1 ? "New collection" : "Add images — " + coll.title
+          ),
           React.createElement("button", {
-            onClick: onClose,
+            onClick: step === 1 ? onClose : handleFinish,
+            disabled: anyUploading,
             style: { background: "none", border: "none", color: "var(--t4)", cursor: "pointer", fontSize: 18, lineHeight: 1 }
-          }, React.createElement("i", { className: "fa-solid fa-xmark" }))
+          }, React.createElement("i", { className: step === 1 ? "fa-solid fa-xmark" : "fa-solid fa-check" }))
         ),
-        React.createElement("div", { style: { marginBottom: 14 } },
-          React.createElement("label", { style: { fontSize: 12.5, color: "var(--t3)", display: "block", marginBottom: 6 } }, "Title *"),
-          React.createElement("input", {
-            className: "fi", placeholder: "My collection",
-            value: title, autoFocus: true,
-            onChange: function (e) { setTitle(e.target.value); },
-            onKeyDown: function (e) { if (e.key === "Enter") handleCreate(); },
-          })
+
+        // Step 1 — collection details
+        step === 1 && React.createElement("div", null,
+          React.createElement("div", { style: { marginBottom: 14 } },
+            React.createElement("label", { style: { fontSize: 12.5, color: "var(--t3)", display: "block", marginBottom: 6 } }, "Title *"),
+            React.createElement("input", {
+              className: "fi", placeholder: "My collection",
+              value: title, autoFocus: true,
+              onChange: function (e) { setTitle(e.target.value); },
+              onKeyDown: function (e) { if (e.key === "Enter") handleCreate(); },
+            })
+          ),
+          React.createElement("div", { style: { marginBottom: 20 } },
+            React.createElement("label", { style: { fontSize: 12.5, color: "var(--t3)", display: "block", marginBottom: 6 } }, "Description"),
+            React.createElement("textarea", {
+              className: "fi", placeholder: "Optional…",
+              rows: 3, value: desc,
+              style: { resize: "vertical" },
+              onChange: function (e) { setDesc(e.target.value); },
+            })
+          ),
+          React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } },
+            React.createElement("button", { className: "btn-ghost", onClick: onClose, disabled: saving }, "Cancel"),
+            React.createElement("button", {
+              className: "btn-primary", onClick: handleCreate,
+              disabled: saving || !title.trim(),
+            }, saving ? "Creating…" : "Next →")
+          )
         ),
-        React.createElement("div", { style: { marginBottom: 20 } },
-          React.createElement("label", { style: { fontSize: 12.5, color: "var(--t3)", display: "block", marginBottom: 6 } }, "Description"),
-          React.createElement("textarea", {
-            className: "fi", placeholder: "Optional description\u2026",
-            rows: 3, value: desc,
-            style: { resize: "vertical" },
-            onChange: function (e) { setDesc(e.target.value); },
-          })
+
+        // Step 2 — image uploads
+        step === 2 && React.createElement("div", null,
+          // Drop zone (only when no entries yet)
+          entries.length === 0 && React.createElement("div", {
+            style: {
+              border: "1.5px dashed var(--b2)", borderRadius: 10,
+              padding: "28px 24px", textAlign: "center",
+              cursor: "pointer", color: "var(--t4)", fontSize: 13,
+              marginBottom: 16,
+            },
+            onClick: function () { inputRef.current && inputRef.current.click(); },
+            onDrop: handleDrop,
+            onDragOver: function (e) { e.preventDefault(); },
+          },
+            React.createElement("i", { className: "fa-solid fa-upload", style: { fontSize: 26, display: "block", marginBottom: 10, color: "var(--t5)" } }),
+            React.createElement("div", null, "Click to add images or drag and drop"),
+            React.createElement("div", { style: { fontSize: 11, color: "var(--t5)", marginTop: 4 } }, "JPEG, PNG, GIF, WebP · up to " + maxSize + " images")
+          ),
+
+          // Thumbnail grid with grayscale/color progress reveal
+          entries.length > 0 && React.createElement("div", {
+            style: {
+              display: "grid", gridTemplateColumns: "repeat(4, 1fr)",
+              gap: 8, overflowY: "auto", maxHeight: 260, marginBottom: 16,
+            }
+          },
+            entries.map(function (entry, i) {
+              var clip = entry.status === "done" ? 0 : 100 - (entry.progress || 0);
+              return React.createElement("div", {
+                key: i,
+                style: { position: "relative", aspectRatio: "1/1", borderRadius: 6, overflow: "hidden", background: "var(--s3)" }
+              },
+                // Grayscale base layer
+                React.createElement("img", {
+                  src: entry.previewUrl,
+                  style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "grayscale(1)" }
+                }),
+                // Color layer revealed top-down as progress increases
+                React.createElement("img", {
+                  src: entry.previewUrl,
+                  style: {
+                    position: "absolute", inset: 0, width: "100%", height: "100%",
+                    objectFit: "cover",
+                    clipPath: "inset(" + clip + "% 0 0 0)",
+                    transition: "clip-path 0.1s linear",
+                  }
+                }),
+                entry.status === "error" && React.createElement("div", {
+                  style: {
+                    position: "absolute", inset: 0,
+                    background: "rgba(248,113,113,0.75)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 11, color: "#fff", padding: 4, textAlign: "center",
+                  }
+                }, entry.error || "Failed")
+              );
+            }),
+            // Add more tile
+            !atMax && React.createElement("div", {
+              style: {
+                aspectRatio: "1/1", borderRadius: 6,
+                border: "1.5px dashed var(--b2)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", color: "var(--t5)", fontSize: 22,
+              },
+              onClick: function () { inputRef.current && inputRef.current.click(); }
+            }, React.createElement("i", { className: "fa-solid fa-plus" }))
+          ),
+
+          React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } },
+            React.createElement("button", {
+              className: "btn-ghost", onClick: handleFinish,
+              disabled: anyUploading,
+            }, entries.length === 0 ? "Skip" : anyUploading ? "Uploading…" : "Done"),
+            entries.length === 0 && React.createElement("button", {
+              className: "btn-primary",
+              onClick: function () { inputRef.current && inputRef.current.click(); },
+            },
+              React.createElement("i", { className: "fa-solid fa-upload", style: { marginRight: 6 } }),
+              "Upload images"
+            )
+          )
         ),
-        React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } },
-          React.createElement("button", { className: "btn-ghost", onClick: onClose, disabled: saving }, "Cancel"),
-          React.createElement("button", {
-            className: "btn-primary", onClick: handleCreate,
-            disabled: saving || !title.trim(),
-          }, saving ? "Creating\u2026" : "Create collection")
-        )
+
+        React.createElement("input", {
+          ref: inputRef,
+          type: "file",
+          accept: "image/jpeg,image/png,image/gif,image/webp",
+          multiple: true,
+          style: { display: "none" },
+          onChange: function (e) { if (e.target.files.length) handleFiles(e.target.files); e.target.value = ""; }
+        })
       )
     );
   }
@@ -688,7 +868,7 @@
 
     useEffect(function () {
       Promise.all([
-        apiGet("/collections?per_page=60"),
+        apiGet("/my-collections"),
         apiGet("/items/" + itemId + "/collections"),
       ]).then(function (results) {
         setColls(results[0].collections || []);

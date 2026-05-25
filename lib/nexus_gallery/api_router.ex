@@ -95,7 +95,8 @@ defmodule NexusGallery.ApiRouter do
       reactions_enabled:     s["reactions_enabled"] == true,
       block_self_ratings:    s["block_self_ratings"] == true,
       block_self_reactions:  s["block_self_reactions"] == true,
-      comments_enabled:      s["comments_enabled"] == true
+      comments_enabled:      s["comments_enabled"] == true,
+      max_collection_size:   parse_int(s["max_collection_size"], 100)
     })
   end
 
@@ -749,6 +750,18 @@ defmodule NexusGallery.ApiRouter do
   # -------------------------------------------------------------------------
   # Collections
   # -------------------------------------------------------------------------
+
+  get "/my-collections" do
+    require_auth(conn, fn conn ->
+      user = conn.assigns.current_user
+      colls = Nexus.Repo.all(
+        Ecto.Query.from c in NexusGallery.Collection,
+          where: c.user_id == ^user.id,
+          order_by: [desc: c.inserted_at]
+      )
+      json_resp(conn, 200, %{collections: Enum.map(colls, &collection_json/1)})
+    end)
+  end
 
   get "/collections" do
     require_permission(conn, "can_view_gallery", fn conn ->
