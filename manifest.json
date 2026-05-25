@@ -4,7 +4,7 @@
 
   "name":        "Gallery",
   "slug":        "nexus-gallery",
-  "version":     "0.5.6",
+  "version":     "0.5.7",
   "module":      "NexusGallery",
   "description": "A community media gallery supporting images, videos, and embeds with collections, ratings, comments, reactions, and subscriptions.",
   "author":      "billyrayfoss",

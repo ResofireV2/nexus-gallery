@@ -138,7 +138,7 @@ defmodule NexusGallery.Harvest do
   def extract_image_urls(body) do
     # Extract inner img src from markdown image syntax: ![alt](url) or [![alt](url)](href)
     # Captures the URL inside the image brackets specifically.
-    img_pattern = ~r{!\[[^\]]*\]\((/uploads/posts/[^\)\s]+)\)}
+    img_pattern = ~r{!\[[^\]]*\]\((/uploads(?:/webp)?/posts/[^\)\s]+)\)}
     Regex.scan(img_pattern, body, capture: :all_but_first)
     |> List.flatten()
     |> Enum.uniq()
