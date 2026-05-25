@@ -57,19 +57,12 @@ defmodule NexusGallery.Items do
 
   @doc "Returns a single item struct by id, or nil."
   def get_item(id) do
-    case Ecto.UUID.dump(id) do
-      {:ok, bin} -> Repo.get(Item, bin)
-      :error     -> nil
-    end
+    Repo.one(from i in Item, where: i.id == ^id)
   end
 
   @doc "Returns item as a plain map with tags and user, or nil."
   def get_item_with_tags(id) do
-    bin = case Ecto.UUID.dump(id) do
-      {:ok, b} -> b
-      :error   -> nil
-    end
-    case bin && Repo.get(Item, bin) do
+    case Repo.one(from i in Item, where: i.id == ^id) do
       nil  -> nil
       item ->
         m = to_map(item)
