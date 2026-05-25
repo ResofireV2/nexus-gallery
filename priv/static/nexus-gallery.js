@@ -56,12 +56,17 @@
 
   // ─── XHR upload (progress events) ────────────────────────────────────────
 
-  function uploadFileXhr(file, recordId, onProgress) {
+  function uploadFileXhr(file, recordId, onProgress, isVideo) {
     return new Promise(function (resolve, reject) {
       var xhr  = new XMLHttpRequest();
       var body = new FormData();
       body.append("file", file);
-      body.append("type", "extension_image");
+      if (isVideo) {
+        body.append("type", "extension_file");
+        body.append("allowed_mime", "video/mp4,video/webm,video/quicktime,video/ogg");
+      } else {
+        body.append("type", "extension_image");
+      }
       if (recordId) body.append("record_id", recordId);
 
       xhr.upload.onprogress = function (e) {
@@ -111,6 +116,7 @@
 
     function startUpload(idx, entry) {
       var mediaType = (entry.file.type || "").startsWith("video/") ? "video" : "image";
+      var isVideo   = mediaType === "video";
       apiPost("/items/draft", { media_type: mediaType })
         .then(function (d) {
           if (!d.id) throw new Error(d.error || "Failed to create draft");
@@ -122,7 +128,7 @@
             setEntries(function (prev) {
               var u = prev.slice(); u[idx] = Object.assign({}, u[idx], { progress: pct }); return u;
             });
-          }).then(function (r) {
+          }, isVideo).then(function (r) {
             // Save file_url, original_url and upload_id back to the draft item
             // so the detail page can display the image when it loads.
             // draftId is in scope here because this .then() is nested inside
