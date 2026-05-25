@@ -305,7 +305,40 @@ defmodule NexusGallery.ApiRouter do
               end).()
 
             case Items.update_and_publish(item, attrs, tag_ids_validated) do
-              {:ok, updated}      -> json_resp(conn, 200, %{item: item_json(updated, user)})
+              {:ok, updated} ->
+                # If item just got published, notify tag subscribers (async)
+                if item.is_draft == true and updated.is_draft == false do
+                  item_id_str_for_notif = item_id_str
+                  actor = user
+                  Task.start(fn ->
+                    {:ok, item_id_bin_notif} = Ecto.UUID.dump(item_id_str_for_notif)
+                    tag_ids_for_notif =
+                      Nexus.Repo.all(
+                        Ecto.Query.from it in "nexus_gallery_item_tags",
+                          where: it.item_id == ^item_id_bin_notif,
+                          select: it.tag_id
+                      )
+                    subscriber_ids =
+                      if tag_ids_for_notif == [] do []
+                      else
+                        Nexus.Repo.all(
+                          Ecto.Query.from s in "nexus_gallery_subscriptions",
+                            where: s.subject_type == "tag"
+                              and s.subject_id in ^tag_ids_for_notif
+                              and s.user_id != ^actor.id,
+                            select: s.user_id
+                        ) |> Enum.uniq()
+                      end
+                    Enum.each(subscriber_ids, fn target_id ->
+                      Nexus.Notifications.notify_extension(@slug, "gallery_new_image",
+                        user_id:  target_id,
+                        actor_id: actor.id,
+                        data:     %{"item_id" => item_id_str_for_notif}
+                      )
+                    end)
+                  end)
+                end
+                json_resp(conn, 200, %{item: item_json(updated, user)})
               {:error, changeset} -> json_resp(conn, 422, %{errors: format_errors(changeset)})
             end
           end
@@ -431,6 +464,21 @@ defmodule NexusGallery.ApiRouter do
                 inserted_at:  now,
                 updated_at:   now
               }])
+              # Notify item owner of new rating (async, not self)
+              Task.start(fn ->
+                item_owner_id = Nexus.Repo.one(
+                  Ecto.Query.from i in NexusGallery.Item,
+                    where: i.id == type(^item_id_str, :binary_id),
+                    select: i.user_id
+                )
+                if item_owner_id && item_owner_id != user.id do
+                  Nexus.Notifications.notify_extension(@slug, "gallery_rating",
+                    user_id:  item_owner_id,
+                    actor_id: user.id,
+                    data:     %{"item_id" => item_id_str, "value" => value}
+                  )
+                end
+              end)
               stats = rating_stats(id_bin, "item")
               json_resp(conn, 200, Map.put(stats, :my_rating, value))
               end  # end self-block else
@@ -678,6 +726,32 @@ defmodule NexusGallery.ApiRouter do
               }])
               comment_id_str = Ecto.UUID.load!(comment_id_bin)
               user_map = %{id: user.id, username: user.username, avatar_url: user.avatar_url}
+              # Notify: item owner + all item subscribers (async)
+              Task.start(fn ->
+                item_owner_id = Nexus.Repo.one(
+                  Ecto.Query.from i in NexusGallery.Item,
+                    where: i.id == type(^item_id_str, :binary_id),
+                    select: i.user_id
+                )
+                subscriber_ids = Nexus.Repo.all(
+                  Ecto.Query.from s in "nexus_gallery_subscriptions",
+                    where: s.subject_type == "item" and s.subject_id == ^id_bin
+                      and s.user_id != ^user.id,
+                    select: s.user_id
+                )
+                notify_ids =
+                  ([item_owner_id] ++ subscriber_ids)
+                  |> Enum.reject(&is_nil/1)
+                  |> Enum.reject(&(&1 == user.id))
+                  |> Enum.uniq()
+                Enum.each(notify_ids, fn target_id ->
+                  Nexus.Notifications.notify_extension(@slug, "gallery_comment",
+                    user_id:  target_id,
+                    actor_id: user.id,
+                    data:     %{"item_id" => item_id_str, "body_preview" => String.slice(String.trim(body), 0, 80)}
+                  )
+                end)
+              end)
               json_resp(conn, 201, %{comment: %{
                 id:          comment_id_str,
                 user_id:     user.id,
@@ -1032,6 +1106,124 @@ defmodule NexusGallery.ApiRouter do
         :error ->
           json_resp(conn, 404, %{error: "Invalid subject_id"})
       end
+    end)
+  end
+
+
+  # -------------------------------------------------------------------------
+  # Following activity feed
+  # -------------------------------------------------------------------------
+
+  get "/following" do
+    require_auth(conn, fn conn ->
+      user    = conn.assigns.current_user
+      page    = parse_int(conn.query_params["page"], 1) |> max(1)
+      per     = 20
+      offset  = (page - 1) * per
+
+      # Load all subscriptions for this user
+      subs = Nexus.Repo.all(
+        Ecto.Query.from s in "nexus_gallery_subscriptions",
+          where: s.user_id == ^user.id,
+          select: %{subject_type: s.subject_type, subject_id: fragment("?::text", s.subject_id)}
+      )
+
+      item_ids   = subs |> Enum.filter(&(&1.subject_type == "item"))       |> Enum.map(&(&1.subject_id))
+      coll_ids   = subs |> Enum.filter(&(&1.subject_type == "collection")) |> Enum.map(&(&1.subject_id))
+      tag_ids    = subs |> Enum.filter(&(&1.subject_type == "tag"))        |> Enum.map(&(&1.subject_id))
+
+      events = []
+
+      # New comments on followed items
+      events = events ++ if item_ids == [] do [] else
+        Nexus.Repo.all(
+          Ecto.Query.from c in "nexus_gallery_comments",
+            where: fragment("?::text", c.subject_id) in ^item_ids
+              and c.subject_type == "item"
+              and c.user_id != ^user.id,
+            order_by: [desc: c.inserted_at],
+            limit: 50,
+            select: %{
+              type:       "comment",
+              subject_id: fragment("?::text", c.subject_id),
+              actor_id:   c.user_id,
+              body:       c.body,
+              occurred_at: c.inserted_at
+            }
+        )
+      end
+
+      # New images on followed tags
+      events = events ++ if tag_ids == [] do [] else
+        Nexus.Repo.all(
+          Ecto.Query.from it in "nexus_gallery_item_tags",
+            join: i in NexusGallery.Item, on: i.id == it.item_id,
+            where: fragment("?::text", it.tag_id) in ^tag_ids
+              and i.is_draft == false
+              and i.user_id != ^user.id,
+            order_by: [desc: i.inserted_at],
+            limit: 50,
+            select: %{
+              type:        "new_item",
+              subject_id:  fragment("?::text", it.tag_id),
+              item_id:     fragment("?::text", i.id),
+              title:       i.title,
+              file_url:    i.file_url,
+              actor_id:    i.user_id,
+              occurred_at: i.inserted_at
+            }
+        )
+      end
+
+      # New items added to followed collections
+      events = events ++ if coll_ids == [] do [] else
+        Nexus.Repo.all(
+          Ecto.Query.from ci in "nexus_gallery_collection_items",
+            join: i in NexusGallery.Item, on: i.id == ci.item_id,
+            where: fragment("?::text", ci.collection_id) in ^coll_ids
+              and i.is_draft == false
+              and i.user_id != ^user.id,
+            order_by: [desc: i.inserted_at],
+            limit: 50,
+            select: %{
+              type:          "collection_item",
+              subject_id:    fragment("?::text", ci.collection_id),
+              item_id:       fragment("?::text", i.id),
+              title:         i.title,
+              file_url:      i.file_url,
+              actor_id:      i.user_id,
+              occurred_at:   i.inserted_at
+            }
+        )
+      end
+
+      # Sort all events by occurred_at desc, paginate
+      sorted = events
+        |> Enum.sort_by(& &1.occurred_at, {:desc, DateTime})
+        |> Enum.drop(offset)
+        |> Enum.take(per)
+
+      # Batch-load actor user info
+      actor_ids = sorted |> Enum.map(& &1.actor_id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+      actors = if actor_ids == [] do %{} else
+        Nexus.Repo.all(
+          Ecto.Query.from u in "users",
+            where: u.id in ^actor_ids,
+            select: %{id: u.id, username: fragment("?::text", u.username), avatar_url: u.avatar_url}
+        ) |> Map.new(&{&1.id, &1})
+      end
+
+      enriched = Enum.map(sorted, fn e ->
+        Map.put(e, :actor, Map.get(actors, e.actor_id))
+      end)
+
+      total = length(events)
+      json_resp(conn, 200, %{
+        events:      enriched,
+        total:       total,
+        page:        page,
+        total_pages: ceil(max(total, 1) / per)
+      })
     end)
   end
 

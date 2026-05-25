@@ -2424,6 +2424,135 @@
 
   // ─── Register all surfaces ────────────────────────────────────────────────
 
+
+  // ─── Gallery Following Feed (for Nexus Following page tab) ───────────────
+
+  function GalleryFollowingFeed(props) {
+    var currentUser = props.currentUser;
+    var isMobile    = useIsMobile();
+
+    var _events  = useState([]);   var events  = _events[0];  var setEvents  = _events[1];
+    var _total   = useState(0);    var total   = _total[0];   var setTotal   = _total[1];
+    var _pages   = useState(1);    var pages   = _pages[0];   var setPages   = _pages[1];
+    var _page    = useState(1);    var page    = _page[0];    var setPage    = _page[1];
+    var _loading = useState(true); var loading = _loading[0]; var setLoading = _loading[1];
+
+    useEffect(function () {
+      if (!currentUser) { setLoading(false); return; }
+      load(1);
+    }, [currentUser && currentUser.id]);
+
+    function load(p) {
+      setLoading(true);
+      apiGet("/following?page=" + p)
+        .then(function (d) {
+          setEvents(d.events || []);
+          setTotal(d.total || 0);
+          setPages(d.total_pages || 1);
+          setPage(p);
+          setLoading(false);
+        })
+        .catch(function () { setLoading(false); });
+    }
+
+    if (!currentUser) {
+      return React.createElement("div", {
+        style: { padding: "48px 24px", textAlign: "center", color: "var(--t5)", fontSize: 13 }
+      }, "Log in to see your gallery following feed.");
+    }
+
+    if (loading) {
+      return React.createElement("div", {
+        style: { padding: "48px 0", textAlign: "center", color: "var(--t5)" }
+      }, React.createElement("i", { className: "fa-solid fa-spinner fa-spin" }));
+    }
+
+    if (events.length === 0) {
+      return React.createElement("div", {
+        style: { padding: "48px 24px", textAlign: "center", color: "var(--t5)", fontSize: 13 }
+      },
+        React.createElement("i", {
+          className: "fa-solid fa-bell",
+          style: { fontSize: 28, display: "block", marginBottom: 12, color: "var(--b2)" }
+        }),
+        "Nothing yet. Follow gallery items, collections, or tags to see activity here."
+      );
+    }
+
+    return React.createElement("div", { style: { padding: "8px 0" } },
+      events.map(function (e, i) {
+        var icon = e.type === "comment" ? "fa-comment"
+                 : e.type === "new_item" ? "fa-image"
+                 : "fa-layer-group";
+        var label = e.type === "comment"         ? "commented on an item you follow"
+                  : e.type === "new_item"        ? "posted a new image to a tag you follow"
+                  : "added an image to a collection you follow";
+
+        return React.createElement("div", {
+          key: i,
+          style: {
+            display: "flex", gap: 10, padding: "12px 16px",
+            borderBottom: "0.5px solid var(--b1)",
+            cursor: e.item_id || e.subject_id ? "pointer" : "default",
+          },
+          onClick: function () {
+            if (e.item_id) NE.navigate("/ext/" + SLUG + "/" + e.item_id);
+          }
+        },
+          // Thumbnail
+          React.createElement("div", {
+            style: {
+              width: isMobile ? 56 : 72, height: isMobile ? 36 : 45,
+              borderRadius: 6, background: "var(--s2)", flexShrink: 0, overflow: "hidden"
+            }
+          },
+            e.file_url && React.createElement("img", {
+              src: e.file_url,
+              style: { width: "100%", height: "100%", objectFit: "cover" }
+            }),
+            !e.file_url && React.createElement("div", {
+              style: { width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }
+            }, React.createElement("i", { className: "fa-solid " + icon, style: { fontSize: 14, color: "var(--t5)" } }))
+          ),
+          // Content
+          React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+            React.createElement("div", {
+              style: { fontSize: 13, color: "var(--t2)", lineHeight: 1.4 }
+            },
+              e.actor && React.createElement("span", { style: { fontWeight: 500 } }, e.actor.username + " "),
+              React.createElement("span", { style: { color: "var(--t4)" } }, label)
+            ),
+            e.title && React.createElement("div", {
+              style: { fontSize: 12, color: "var(--t3)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }
+            }, e.title),
+            e.body && React.createElement("div", {
+              style: { fontSize: 12, color: "var(--t4)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }
+            }, "“" + e.body + "”"),
+            React.createElement("div", {
+              style: { fontSize: 11, color: "var(--t5)", marginTop: 3 }
+            }, e.occurred_at ? new Date(e.occurred_at).toLocaleDateString() : "")
+          )
+        );
+      }),
+
+      // Pagination
+      pages > 1 && React.createElement("div", {
+        style: { display: "flex", justifyContent: "center", gap: 6, padding: "16px 0" }
+      },
+        page > 1 && React.createElement("button", {
+          className: "btn-ghost", style: { fontSize: 12.5 },
+          onClick: function () { load(page - 1); }
+        }, React.createElement("i", { className: "fa-solid fa-chevron-left" })),
+        React.createElement("span", { style: { fontSize: 12.5, color: "var(--t4)", padding: "6px 10px" } },
+          page + " / " + pages),
+        page < pages && React.createElement("button", {
+          className: "btn-ghost", style: { fontSize: 12.5 },
+          onClick: function () { load(page + 1); }
+        }, React.createElement("i", { className: "fa-solid fa-chevron-right" }))
+      )
+    );
+  }
+
   NE.registerRoute(SLUG, "/",                 GalleryPage,        { title: "Gallery" });
   NE.registerRoute(SLUG, "/:uuid",            GalleryItemPage,    { title: "Gallery item" });
   NE.registerRoute(SLUG, "/collection/:slug", CollectionPage,     { title: "Collection" });
@@ -2432,6 +2561,7 @@
   NE.registerRoute(SLUG, "/new/:uuid",        NewGalleryItemPage, { title: "New gallery item" });
 
   NE.registerAdminPanel(SLUG, { label: "Gallery", icon: "fa-images", component: GalleryAdminPanel });
+  NE.registerFollowingTab({ key: "gallery", label: "Gallery", component: GalleryFollowingFeed });
 
   NE.registerExploreItem({ slug: SLUG, path: "/", label: "Gallery", icon: "fa-images", authOnly: false, priority: 50 });
 
@@ -2442,8 +2572,10 @@
 
   NE.registerProfileTab({ slug: SLUG, id: "gallery-uploads", component: GalleryProfileTab });
 
-  NE.registerNotificationType("gallery_comment",   { icon: "fa-comment", iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " commented on your gallery item.")); }, onClick: function () {} });
-  NE.registerNotificationType("gallery_rating",    { icon: "fa-star",    iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " rated your gallery item.")); }, onClick: function () {} });
+  // gallery_comment registered below with onClick
+  NE.registerNotificationType("gallery_rating",    { icon: "fa-star",    iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " rated your gallery item.")); }, onClick: function (n) { if (n.data && n.data.item_id) NE.navigate("/ext/" + SLUG + "/" + n.data.item_id); } });
   NE.registerNotificationType("gallery_new_image", { icon: "fa-images",  iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " added a new image to a tag you follow.")); }, onClick: function () {} });
+  NE.registerNotificationType("gallery_collection_item", { icon: "fa-layer-group", iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " added a new image to a collection you follow.")); }, onClick: function (n) { if (n.data && n.data.item_id) NE.navigate("/ext/" + SLUG + "/" + n.data.item_id); } });
+  NE.registerNotificationType("gallery_comment",        { icon: "fa-comment",     iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " commented on a gallery item you follow.")); }, onClick: function (n) { if (n.data && n.data.item_id) NE.navigate("/ext/" + SLUG + "/" + n.data.item_id); } });
 
 })();
