@@ -21,12 +21,19 @@ defmodule NexusGallery.Harvest do
   post_id is an integer. settings is the extension settings map.
   """
   def process_post(post_id, settings) do
+    require Logger
+    Logger.info("[nexus-gallery] harvest triggered for post_id=#{inspect(post_id)}")
     unless parse_bool(settings["harvest_enabled"]) do
+      Logger.info("[nexus-gallery] harvest skipped — harvest_enabled is off (settings=#{inspect(settings)})")
       :ok
     else
       case fetch_post(post_id) do
-        nil  -> :ok
-        post -> do_harvest(post, settings)
+        nil ->
+          Logger.warning("[nexus-gallery] harvest — post #{inspect(post_id)} not found or hidden")
+          :ok
+        post ->
+          Logger.info("[nexus-gallery] harvest — post found, space_id=#{inspect(post.space_id)}, body_length=#{String.length(post.body || "")}")
+          do_harvest(post, settings)
       end
     end
   end
@@ -36,19 +43,26 @@ defmodule NexusGallery.Harvest do
   # ---------------------------------------------------------------------------
 
   defp do_harvest(post, _settings) do
+    require Logger
     # Get the post's space slug — harvest is space-based only
     space_slug = if post.space_id, do: fetch_space_slug(post.space_id), else: nil
+    Logger.info("[nexus-gallery] harvest — space_slug=#{inspect(space_slug)}")
     if is_nil(space_slug) do
+      Logger.warning("[nexus-gallery] harvest — no space slug found for space_id=#{inspect(post.space_id)}")
       :ok
     else
       # Find harvest mappings for this space slug
       mappings = fetch_mappings_for_slugs([space_slug])
+      Logger.info("[nexus-gallery] harvest — mappings found=#{length(mappings)} for slug=#{inspect(space_slug)}")
       if mappings == [] do
+        Logger.info("[nexus-gallery] harvest — no mapping for space slug #{inspect(space_slug)}, skipping")
         :ok
       else
         # Extract image URLs from post body
         image_urls = extract_image_urls(post.body)
+        Logger.info("[nexus-gallery] harvest — image_urls found=#{inspect(image_urls)}")
         if image_urls == [] do
+          Logger.info("[nexus-gallery] harvest — no image URLs in post body, skipping")
           :ok
         else
           # Resolve gallery_tag_ids from mappings (all matching slugs)
@@ -59,7 +73,9 @@ defmodule NexusGallery.Harvest do
 
           # For each image URL, create a gallery item if not already harvested
           Enum.each(image_urls, fn url ->
-            unless Items.harvested?(post.id, url) do
+            already = Items.harvested?(post.id, url)
+            Logger.info("[nexus-gallery] harvest — url=#{inspect(url)} already_harvested=#{already}")
+            unless already do
               case Items.harvest_item(%{
                 user_id:        post.user_id,
                 media_type:     "image",
@@ -70,9 +86,9 @@ defmodule NexusGallery.Harvest do
                 source_post_id: post.id
               }) do
                 {:ok, item} ->
+                  Logger.info("[nexus-gallery] harvest — created item #{inspect(item.id)}, tagging with #{inspect(gallery_tag_ids)}")
                   Items.set_tags(item.id, gallery_tag_ids)
                 {:error, reason} ->
-                  require Logger
                   Logger.warning("[nexus-gallery] harvest_item failed for post #{post.id}: #{inspect(reason)}")
               end
             end
