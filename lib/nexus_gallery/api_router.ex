@@ -12,6 +12,16 @@ defmodule NexusGallery.ApiRouter do
   plug :match
   plug :dispatch
 
+  # Wrap the entire router in a rescue so every unhandled exception
+  # returns a JSON error body rather than an opaque 500 from ExtensionRouter.
+  def call(conn, opts) do
+    try do
+      super(conn, opts)
+    rescue
+      e -> json_resp(conn, 500, %{error: inspect(e)})
+    end
+  end
+
   # -------------------------------------------------------------------------
   # Helpers
   # -------------------------------------------------------------------------
@@ -248,9 +258,10 @@ defmodule NexusGallery.ApiRouter do
   end
 
   patch "/items/:id" do
-    require_auth(conn, fn conn ->
-      user = conn.assigns.current_user
-      case Items.get_item(conn.params["id"]) do
+    try do
+      require_auth(conn, fn conn ->
+        user = conn.assigns.current_user
+        case Items.get_item(conn.params["id"]) do
         nil  -> json_resp(conn, 404, %{error: "Item not found"})
         item ->
           unless user.id == item.user_id || user.role in ["admin", "moderator"] do
@@ -294,6 +305,9 @@ defmodule NexusGallery.ApiRouter do
           end
       end
     end)
+    rescue
+      e -> json_resp(conn, 500, %{error: inspect(e)})
+    end
   end
 
   delete "/items/:id" do
