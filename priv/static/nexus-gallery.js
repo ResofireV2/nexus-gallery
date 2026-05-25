@@ -1582,7 +1582,7 @@
         },
           React.createElement("img", {
             className: "yt-thumb",
-            src: "https://i.ytimg.com/vi/" + ytId + "/maxresdefault.jpg",
+            src: item.thumbnail_url || ("https://i.ytimg.com/vi/" + ytId + "/hqdefault.jpg"),
             alt: item.title || "YouTube video",
             loading: "lazy",
             onError: function (e) {
