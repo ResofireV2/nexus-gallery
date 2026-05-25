@@ -676,6 +676,7 @@
               file_url:     r.url,
               original_url: r.original_url,
               upload_id:    r.upload ? r.upload.id : null,
+              is_draft:     false,
             }).then(function () {
               return apiPost("/collections/" + coll.slug + "/items", { item_id: draftId })
                 .then(function () {
