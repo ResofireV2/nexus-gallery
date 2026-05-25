@@ -279,7 +279,8 @@
     var _loading        = useState(true);     var loading        = _loading[0];        var setLoading        = _loading[1];
     var _total          = useState(0);        var total          = _total[0];          var setTotal          = _total[1];
     var _totalPages     = useState(1);        var totalPages     = _totalPages[0];     var setTotalPages     = _totalPages[1];
-    var _activeTab      = useState("Images"); var activeTab      = _activeTab[0];      var setActiveTab      = _activeTab[1];
+    var _initialTab = (function () { var t = sessionStorage.getItem("gallery_tab"); if (t) sessionStorage.removeItem("gallery_tab"); return t || "Images"; })();
+    var _activeTab      = useState(_initialTab); var activeTab      = _activeTab[0];      var setActiveTab      = _activeTab[1];
     var _sort           = useState("newest"); var sort           = _sort[0];           var setSort           = _sort[1];
     var _activeTag      = useState(null);     var activeTag      = _activeTag[0];      var setActiveTag      = _activeTag[1];
     var _page           = useState(1);        var page           = _page[0];           var setPage           = _page[1];
@@ -1296,7 +1297,13 @@
       React.createElement("button", {
         className: "btn-ghost",
         style: { fontSize: 12.5, marginBottom: 16, display: "inline-flex", alignItems: "center", gap: 6 },
-        onClick: function () { NE.navigate("/ext/" + SLUG); },
+        onClick: function () {
+          var tab = item && item.media_type === "video" ? "Videos"
+                  : item && item.media_type === "embed" ? "Embeds"
+                  : "Images";
+          sessionStorage.setItem("gallery_tab", tab);
+          NE.navigate("/ext/" + SLUG);
+        },
       },
         React.createElement("i", { className: "fa-solid fa-arrow-left", style: { fontSize: 11 } }),
         " Gallery"
@@ -1756,7 +1763,10 @@
       React.createElement("button", {
         className: "btn-ghost",
         style: { fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 },
-        onClick: function () { NE.navigate("/ext/" + SLUG); }
+        onClick: function () {
+          sessionStorage.setItem("gallery_tab", "Collections");
+          NE.navigate("/ext/" + SLUG);
+        }
       },
         React.createElement("i", { className: "fa-solid fa-arrow-left", style: { fontSize: 11 } }),
         "Gallery"
