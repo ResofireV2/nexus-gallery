@@ -310,6 +310,26 @@ defmodule NexusGallery.ApiRouter do
     end
   end
 
+
+  post "/items/:id/feature" do
+    require_permission(conn, "can_feature_item", fn conn ->
+      case Items.get_item(conn.params["id"]) do
+        nil  -> json_resp(conn, 404, %{error: "Item not found"})
+        item ->
+          new_val = not item.is_featured
+          id_str = uuid_str(item.id)
+          case Nexus.Repo.update_all(
+            Ecto.Query.from(i in NexusGallery.Item,
+              where: i.id == type(^id_str, :binary_id)),
+            set: [is_featured: new_val]
+          ) do
+            {1, _} -> json_resp(conn, 200, %{is_featured: new_val})
+            _      -> json_resp(conn, 500, %{error: "Update failed"})
+          end
+      end
+    end)
+  end
+
   delete "/items/:id" do
     require_auth(conn, fn conn ->
       user = conn.assigns.current_user

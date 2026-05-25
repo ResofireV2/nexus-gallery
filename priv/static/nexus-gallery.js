@@ -4,7 +4,7 @@
   const NE   = window.NexusExtensions;
   const SLUG = "nexus-gallery";
   const { useState, useEffect, useRef, useCallback } = window.React;
-  const { Toggle, toast, Av } = window.NexusComponents;
+  const { Toggle, toast, Av, Md } = window.NexusComponents;
 
   // ─── Shared fetch helpers ─────────────────────────────────────────────────
 
@@ -530,7 +530,368 @@
     );
   }
 
-  function GalleryItemPage()    { return React.createElement(Placeholder, { title: "Gallery item" }); }
+  // ─── YouTube ID extractor ─────────────────────────────────────────────────
+
+  function extractYouTubeId(url) {
+    if (!url) return null;
+    var m = url.match(/(?:youtu\.be\/|v=|embed\/)([A-Za-z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+
+  // ─── Gallery item detail page ─────────────────────────────────────────────
+
+  function GalleryItemPage(props) {
+    var uuid        = props.uuid;
+    var currentUser = props.currentUser;
+
+    var _item     = useState(null);  var item     = _item[0];     var setItem     = _item[1];
+    var _allTags  = useState([]);    var allTags  = _allTags[0];  var setAllTags  = _allTags[1];
+    var _loading  = useState(true);  var loading  = _loading[0];  var setLoading  = _loading[1];
+    var _editing  = useState(false); var editing  = _editing[0];  var setEditing  = _editing[1];
+    var _saving   = useState(false); var saving   = _saving[0];   var setSaving   = _saving[1];
+    var _form     = useState({ title: "", description: "", tag_ids: [] });
+    var form = _form[0]; var setForm = _form[1];
+
+    useEffect(function () {
+      Promise.all([
+        apiGet("/items/" + uuid),
+        apiGet("/tags/public"),
+      ]).then(function (results) {
+        if (results[0].item) {
+          var i = results[0].item;
+          setItem(i);
+          setForm({
+            title:       i.title || "",
+            description: i.description || "",
+            tag_ids:     (i.tags || []).map(function (t) { return t.id; }),
+          });
+        }
+        if (results[1].tags) setAllTags(results[1].tags);
+        setLoading(false);
+      }).catch(function () { setLoading(false); });
+    }, [uuid]);
+
+    function handleSave() {
+      setSaving(true);
+      apiPatch("/items/" + uuid, form)
+        .then(function (d) {
+          if (d.item) {
+            setItem(d.item);
+            setEditing(false);
+            toast("Saved");
+          } else {
+            toast(d.error || "Save failed", "err");
+          }
+        })
+        .catch(function () { toast("Save failed", "err"); })
+        .finally(function () { setSaving(false); });
+    }
+
+    function handleFeature() {
+      apiPost("/items/" + uuid + "/feature")
+        .then(function (d) {
+          if (typeof d.is_featured === "boolean") {
+            setItem(function (prev) { return Object.assign({}, prev, { is_featured: d.is_featured }); });
+            toast(d.is_featured ? "Marked as featured" : "Removed from featured");
+          } else {
+            toast(d.error || "Failed", "err");
+          }
+        })
+        .catch(function () { toast("Failed", "err"); });
+    }
+
+    function handleDelete() {
+      if (!window.confirm("Delete this item? This cannot be undone.")) return;
+      apiDelete("/items/" + uuid)
+        .then(function (d) {
+          if (d.ok) {
+            toast("Deleted");
+            NE.navigate("/ext/" + SLUG);
+          } else {
+            toast(d.error || "Delete failed", "err");
+          }
+        })
+        .catch(function () { toast("Delete failed", "err"); });
+    }
+
+    function handleOpenLightbox() {
+      if (!item || item.media_type !== "image") return;
+      window._openFancybox([{
+        src:         item.file_url,
+        originalSrc: item.original_url || item.file_url,
+      }], 0);
+    }
+
+    function toggleTag(tagId) {
+      setForm(function (p) {
+        var ids = p.tag_ids.indexOf(tagId) >= 0
+          ? p.tag_ids.filter(function (x) { return x !== tagId; })
+          : p.tag_ids.concat([tagId]);
+        return Object.assign({}, p, { tag_ids: ids });
+      });
+    }
+
+    if (loading) {
+      return React.createElement("div", {
+        style: { padding: "48px 0", textAlign: "center", color: "var(--t5)" }
+      }, React.createElement("i", { className: "fa-solid fa-spinner fa-spin" }));
+    }
+
+    if (!item) {
+      return React.createElement("div", {
+        style: { padding: "48px 0", textAlign: "center", color: "var(--t5)", fontSize: 14 }
+      }, "Item not found.");
+    }
+
+    var ytId = item.media_type === "embed" ? extractYouTubeId(item.embed_url) : null;
+
+    return React.createElement("div", { style: { paddingBottom: 40 } },
+
+      // Back button
+      React.createElement("button", {
+        className: "btn-ghost",
+        style: { fontSize: 12.5, marginBottom: 16, display: "inline-flex", alignItems: "center", gap: 6 },
+        onClick: function () { NE.navigate("/ext/" + SLUG); },
+      },
+        React.createElement("i", { className: "fa-solid fa-arrow-left", style: { fontSize: 11 } }),
+        " Gallery"
+      ),
+
+      // ── Media display ──────────────────────────────────────────────────────
+
+      // Image
+      item.media_type === "image" && item.file_url &&
+        React.createElement("div", {
+          onClick: handleOpenLightbox,
+          style: {
+            width: "100%", aspectRatio: "16/9",
+            borderRadius: 10, overflow: "hidden",
+            background: "var(--s2)", cursor: "zoom-in",
+            border: "0.5px solid var(--b1)", marginBottom: 16,
+          }
+        },
+          React.createElement("img", {
+            src: item.file_url,
+            style: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
+            loading: "lazy",
+          })
+        ),
+
+      // Video
+      item.media_type === "video" && item.file_url &&
+        React.createElement("div", {
+          style: {
+            width: "100%", aspectRatio: "16/9",
+            borderRadius: 10, overflow: "hidden",
+            background: "#000", border: "0.5px solid var(--b1)", marginBottom: 16,
+          }
+        },
+          React.createElement("video", {
+            src: item.file_url,
+            controls: true,
+            style: { width: "100%", height: "100%", display: "block" },
+          })
+        ),
+
+      // YouTube embed — uses Nexus's existing document click handler on .yt-lite
+      item.media_type === "embed" && ytId &&
+        React.createElement("div", {
+          className: "yt-lite",
+          "data-id": ytId,
+          style: { marginBottom: 16 },
+        },
+          React.createElement("img", {
+            className: "yt-thumb",
+            src: "https://i.ytimg.com/vi/" + ytId + "/maxresdefault.jpg",
+            alt: item.title || "YouTube video",
+            loading: "lazy",
+            onError: function (e) {
+              e.target.src = "https://i.ytimg.com/vi/" + ytId + "/hqdefault.jpg";
+            },
+          }),
+          React.createElement("div", { className: "yt-play" },
+            React.createElement("svg", { viewBox: "0 0 68 48", width: "68", height: "48" },
+              React.createElement("path", {
+                d: "M66.52 7.74c-.78-2.93-2.49-5.41-5.42-6.19C55.79.13 34 0 34 0S12.21.13 6.9 1.55c-2.93.78-4.63 3.26-5.42 6.19C.06 13.05 0 24 0 24s.06 10.95 1.48 16.26c.78 2.93 2.49 5.41 5.42 6.19C12.21 47.87 34 48 34 48s21.79-.13 27.1-1.55c2.93-.78 4.64-3.26 5.42-6.19C67.94 34.95 68 24 68 24s-.06-10.95-1.48-16.26z",
+                fill: "#f00",
+              }),
+              React.createElement("path", { d: "M45 24 27 14v20", fill: "#fff" })
+            )
+          )
+        ),
+
+      // ── Title, uploader, actions ───────────────────────────────────────────
+
+      React.createElement("div", {
+        style: { display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 10 }
+      },
+        // Left: title + uploader
+        React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+          React.createElement("h1", {
+            style: { fontSize: 20, fontWeight: 500, color: "var(--t1)", margin: "0 0 8px 0" }
+          }, item.title || React.createElement("span", { style: { color: "var(--t5)" } }, "Untitled")),
+          item.user && React.createElement("div", {
+            style: { display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--t4)" }
+          },
+            React.createElement(Av, { user: item.user, size: 20 }),
+            React.createElement("span", null, item.user.username),
+            React.createElement("span", null, "·"),
+            item.inserted_at && React.createElement("span", null,
+              new Date(item.inserted_at).toLocaleDateString()
+            ),
+            React.createElement("span", null, "·"),
+            React.createElement("i", { className: "fa-solid fa-eye", style: { fontSize: 10 } }),
+            React.createElement("span", null, " " + (item.view_count || 0))
+          )
+        ),
+        // Right: action buttons
+        React.createElement("div", { style: { display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" } },
+          item.can_feature && React.createElement("button", {
+            className: "btn-ghost",
+            style: {
+              fontSize: 12, padding: "5px 12px",
+              color: item.is_featured ? "#fbbf24" : "var(--t4)",
+              borderColor: item.is_featured ? "rgba(251,191,36,0.4)" : undefined,
+            },
+            onClick: handleFeature,
+          },
+            React.createElement("i", { className: "fa-solid fa-star", style: { marginRight: 5 } }),
+            item.is_featured ? "Unfeature" : "Feature"
+          ),
+          item.can_edit && !editing && React.createElement("button", {
+            className: "btn-ghost",
+            style: { fontSize: 12, padding: "5px 12px" },
+            onClick: function () { setEditing(true); },
+          },
+            React.createElement("i", { className: "fa-solid fa-pen", style: { marginRight: 5 } }),
+            "Edit"
+          ),
+          item.can_delete && React.createElement("button", {
+            className: "btn-ghost",
+            style: { fontSize: 12, padding: "5px 12px", color: "var(--red)", borderColor: "rgba(248,113,113,0.3)" },
+            onClick: handleDelete,
+          },
+            React.createElement("i", { className: "fa-solid fa-trash", style: { marginRight: 5 } }),
+            "Delete"
+          )
+        )
+      ),
+
+      // Featured badge
+      item.is_featured && React.createElement("div", {
+        style: {
+          display: "inline-flex", alignItems: "center", gap: 5, marginBottom: 10,
+          background: "rgba(251,191,36,0.12)", color: "#fbbf24",
+          fontSize: 11.5, padding: "2px 10px", borderRadius: 20,
+          border: "0.5px solid rgba(251,191,36,0.3)",
+        }
+      },
+        React.createElement("i", { className: "fa-solid fa-star", style: { fontSize: 10 } }),
+        " Featured"
+      ),
+
+      // Tags (view mode)
+      !editing && item.tags && item.tags.length > 0 &&
+        React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 } },
+          item.tags.map(function (tag) {
+            return React.createElement("div", {
+              key: tag.id,
+              onClick: function () { NE.navigate("/ext/" + SLUG + "?tag=" + tag.slug); },
+              style: {
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "3px 10px", borderRadius: 20, cursor: "pointer",
+                border: "0.5px solid " + tag.color + "55",
+                background: tag.color + "18", color: tag.color, fontSize: 12,
+              }
+            },
+              React.createElement("div", {
+                style: { width: 6, height: 6, borderRadius: "50%", background: tag.color, flexShrink: 0 }
+              }),
+              tag.name
+            );
+          })
+        ),
+
+      // Description (view mode)
+      !editing && item.description &&
+        React.createElement("div", { style: { marginBottom: 16 } },
+          React.createElement(Md, { text: item.description })
+        ),
+
+      // ── Edit form (inline) ─────────────────────────────────────────────────
+
+      editing && React.createElement("div", {
+        style: {
+          background: "var(--s2)", border: "0.5px solid var(--b2)",
+          borderRadius: 12, padding: "18px 20px", marginBottom: 16,
+        }
+      },
+        React.createElement("div", { className: "fg" },
+          React.createElement("label", { className: "fl" }, "Title"),
+          React.createElement("input", {
+            className: "fi",
+            value: form.title,
+            placeholder: "Title",
+            onChange: function (e) {
+              setForm(function (p) { return Object.assign({}, p, { title: e.target.value }); });
+            },
+          })
+        ),
+        React.createElement("div", { className: "fg" },
+          React.createElement("label", { className: "fl" }, "Description"),
+          React.createElement("textarea", {
+            className: "fi",
+            rows: 4,
+            value: form.description,
+            placeholder: "Optional description",
+            style: { resize: "vertical", minHeight: 80 },
+            onChange: function (e) {
+              setForm(function (p) { return Object.assign({}, p, { description: e.target.value }); });
+            },
+          })
+        ),
+        allTags.length > 0 && React.createElement("div", { className: "fg" },
+          React.createElement("label", { className: "fl" }, "Tags"),
+          React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 } },
+            allTags.map(function (tag) {
+              var sel = form.tag_ids.indexOf(tag.id) >= 0;
+              return React.createElement("div", {
+                key: tag.id,
+                onClick: function () { toggleTag(tag.id); },
+                style: {
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "3px 10px", borderRadius: 20, cursor: "pointer",
+                  border: "0.5px solid " + (sel ? tag.color : "var(--b2)"),
+                  background: sel ? tag.color + "22" : "transparent",
+                  color: sel ? tag.color : "var(--t4)", fontSize: 12,
+                }
+              },
+                React.createElement("div", {
+                  style: { width: 6, height: 6, borderRadius: "50%", background: tag.color, flexShrink: 0 }
+                }),
+                tag.name
+              );
+            })
+          )
+        ),
+        React.createElement("div", { style: { display: "flex", gap: 8 } },
+          React.createElement("button", {
+            className: "btn-primary",
+            style: { fontSize: 13 },
+            onClick: handleSave,
+            disabled: saving,
+          }, saving ? "Saving\u2026" : "Save changes"),
+          React.createElement("button", {
+            className: "btn-ghost",
+            style: { fontSize: 13 },
+            onClick: function () { setEditing(false); },
+            disabled: saving,
+          }, "Cancel")
+        )
+      )
+    );
+  }
+
   function CollectionPage()     { return React.createElement(Placeholder, { title: "Collection" }); }
   function GalleryTagPage()     { return React.createElement(Placeholder, { title: "Gallery tag" }); }
   function GalleryUserPage()    { return React.createElement(Placeholder, { title: "Gallery uploads" }); }
