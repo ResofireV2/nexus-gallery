@@ -31,8 +31,8 @@ defmodule NexusGallery.ApiRouter do
 
   defp require_auth(conn, then_fn) do
     case conn.assigns[:current_user] do
-      nil  -> json_resp(conn, 401, %{error: "Login required"})
-      _    -> then_fn.(conn)
+      nil -> json_resp(conn, 401, %{error: "Login required"})
+      _   -> then_fn.(conn)
     end
   end
 
@@ -43,8 +43,18 @@ defmodule NexusGallery.ApiRouter do
     end
   end
 
+  defp parse_int(nil, default),          do: default
+  defp parse_int(v, default) when is_integer(v), do: v
+  defp parse_int(v, default) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, _} -> n
+      :error -> default
+    end
+  end
+  defp parse_int(_, default), do: default
+
   # -------------------------------------------------------------------------
-  # Phase 1 health check
+  # Health check
   # -------------------------------------------------------------------------
 
   get "/ping" do
@@ -52,24 +62,20 @@ defmodule NexusGallery.ApiRouter do
   end
 
   # -------------------------------------------------------------------------
-  # Permissions endpoint
+  # Permissions
   # -------------------------------------------------------------------------
 
   get "/permissions" do
     user = conn.assigns[:current_user]
-
     keys = [
       "can_view_gallery", "can_upload_image", "can_upload_video",
       "can_submit_embed", "can_create_collection", "can_comment",
       "can_rate", "can_react", "can_subscribe",
       "can_feature_item", "can_manage_gallery"
     ]
-
     resolved = Map.new(keys, fn key ->
       {key, Permissions.check(@slug, key, user) == :ok}
     end)
-
-    # Include relevant settings the frontend needs for show/hide decisions
     s = settings()
     json_resp(conn, 200, %{
       permissions:    resolved,
@@ -79,7 +85,7 @@ defmodule NexusGallery.ApiRouter do
   end
 
   # -------------------------------------------------------------------------
-  # Tags — all gated on can_manage_gallery
+  # Tags
   # -------------------------------------------------------------------------
 
   get "/tags" do
@@ -89,10 +95,17 @@ defmodule NexusGallery.ApiRouter do
     end)
   end
 
+  # Public tag list for the gallery browse page filter chips
+  get "/tags/public" do
+    require_permission(conn, "can_view_gallery", fn conn ->
+      tags = Tags.list_tags()
+      json_resp(conn, 200, %{tags: Enum.map(tags, &tag_json/1)})
+    end)
+  end
+
   post "/tags" do
     require_permission(conn, "can_manage_gallery", fn conn ->
       params = conn.body_params
-
       attrs = %{
         "name"         => params["name"],
         "slug"         => params["slug"] || NexusGallery.Tag.slugify(params["name"] || ""),
@@ -102,7 +115,6 @@ defmodule NexusGallery.ApiRouter do
         "allow_embeds" => parse_bool(params["allow_embeds"], true),
         "position"     => next_position()
       }
-
       case Tags.create_tag(attrs) do
         {:ok, tag}          -> json_resp(conn, 201, %{tag: tag_json(tag)})
         {:error, changeset} -> json_resp(conn, 422, %{errors: format_errors(changeset)})
@@ -124,7 +136,6 @@ defmodule NexusGallery.ApiRouter do
             |> maybe_put_bool(params, "allow_videos")
             |> maybe_put_bool(params, "allow_embeds")
             |> maybe_put_slug(params, tag)
-
           case Tags.update_tag(tag, attrs) do
             {:ok, updated}      -> json_resp(conn, 200, %{tag: tag_json(updated)})
             {:error, changeset} -> json_resp(conn, 422, %{errors: format_errors(changeset)})
@@ -149,12 +160,9 @@ defmodule NexusGallery.ApiRouter do
   post "/tags/reorder" do
     require_permission(conn, "can_manage_gallery", fn conn ->
       ids = conn.body_params["ids"]
-
       cond do
-        not is_list(ids) ->
-          json_resp(conn, 422, %{error: "ids must be an array"})
-        not Enum.all?(ids, &is_binary/1) ->
-          json_resp(conn, 422, %{error: "all ids must be strings"})
+        not is_list(ids)               -> json_resp(conn, 422, %{error: "ids must be an array"})
+        not Enum.all?(ids, &is_binary/1) -> json_resp(conn, 422, %{error: "all ids must be strings"})
         true ->
           case Tags.reorder_tags(ids) do
             :ok              -> json_resp(conn, 200, %{ok: true})
@@ -165,19 +173,49 @@ defmodule NexusGallery.ApiRouter do
   end
 
   # -------------------------------------------------------------------------
-  # Items — Phase 3
+  # Items — list (Phase 4)
   # -------------------------------------------------------------------------
 
-  # POST /items/draft
-  # Creates an empty draft item and returns its id.
-  # Called before file upload so we have a record_id for Nexus.
+  get "/items" do
+    require_permission(conn, "can_view_gallery", fn conn ->
+      params   = conn.query_params
+      s        = settings()
+      per_page = parse_int(params["per_page"], parse_int(s["items_per_page"], 36))
+
+      opts = [
+        page:       parse_int(params["page"], 1),
+        per_page:   per_page,
+        sort:       params["sort"] || "newest",
+        tag_slug:   params["tag"],
+        media_type: params["type"],
+        user_id:    params["user_id"] && parse_int(params["user_id"], nil),
+        search:     params["search"],
+      ]
+
+      {items, total} = Items.list_items(opts)
+      per = Keyword.get(opts, :per_page)
+      page = Keyword.get(opts, :page)
+
+      json_resp(conn, 200, %{
+        items:      Enum.map(items, &browse_item_json/1),
+        total:      total,
+        page:       page,
+        per_page:   per,
+        total_pages: ceil(total / per)
+      })
+    end)
+  end
+
+  # -------------------------------------------------------------------------
+  # Items — single, create, update, delete (Phase 3)
+  # -------------------------------------------------------------------------
+
   post "/items/draft" do
     require_permission(conn, "can_upload_image", fn conn ->
       user       = conn.assigns.current_user
       media_type = conn.body_params["media_type"] || "image"
       s          = settings()
 
-      # Gate video uploads behind the videos_enabled setting
       if media_type == "video" and s["videos_enabled"] != true do
         json_resp(conn, 403, %{error: "Video uploads are not enabled on this forum"})
       else
@@ -189,17 +227,13 @@ defmodule NexusGallery.ApiRouter do
     end)
   end
 
-  # GET /items/:id
-  # Returns a single item. Owner or admin can see drafts; others cannot.
   get "/items/:id" do
     require_permission(conn, "can_view_gallery", fn conn ->
       user = conn.assigns[:current_user]
-
       case Items.get_item_with_tags(conn.params["id"]) do
         nil  -> json_resp(conn, 404, %{error: "Item not found"})
         item ->
-          owner_or_admin = user && (to_string(user.id) == to_string(item.user_id) || user.role in ["admin", "moderator"])
-
+          owner_or_admin = user && (user.id == item.user_id || user.role in ["admin", "moderator"])
           if item.is_draft and not owner_or_admin do
             json_resp(conn, 404, %{error: "Item not found"})
           else
@@ -209,46 +243,45 @@ defmodule NexusGallery.ApiRouter do
     end)
   end
 
-  # PATCH /items/:id
-  # Saves metadata (title, description, tags) and optionally publishes.
-  # Called from the /new/:uuid metadata form after upload completes.
   patch "/items/:id" do
     require_auth(conn, fn conn ->
       user = conn.assigns.current_user
-
       case Items.get_item(conn.params["id"]) do
-        nil -> json_resp(conn, 404, %{error: "Item not found"})
+        nil  -> json_resp(conn, 404, %{error: "Item not found"})
         item ->
-          unless to_string(user.id) == to_string(item.user_id) || user.role in ["admin", "moderator"] do
+          unless user.id == item.user_id || user.role in ["admin", "moderator"] do
             json_resp(conn, 403, %{error: "Access denied"})
           else
             params   = conn.body_params
             tag_ids  = params["tag_ids"]
             s        = settings()
-            max_tags = (s["max_tags_per_item"] || 5) |> trunc()
+            max_tags = parse_int(s["max_tags_per_item"], 5)
 
             tag_ids_validated =
               cond do
-                is_nil(tag_ids)         -> []
-                not is_list(tag_ids)    -> []
-                length(tag_ids) > max_tags -> Enum.take(tag_ids, max_tags)
-                true                    -> tag_ids
+                is_nil(tag_ids)              -> []
+                not is_list(tag_ids)         -> []
+                length(tag_ids) > max_tags   -> Enum.take(tag_ids, max_tags)
+                true                         -> tag_ids
               end
 
-            attrs = %{
-              "title"        => params["title"],
-              "description"  => params["description"],
-              "is_draft"     => parse_bool(params["is_draft"], true),
-              "file_url"     => params["file_url"],
-              "original_url" => params["original_url"],
-              "thumbnail_url"=> params["thumbnail_url"],
-              "width"        => params["width"],
-              "height"       => params["height"],
-              "upload_id"    => params["upload_id"],
-              "embed_url"    => params["embed_url"]
-            }
-            |> Enum.reject(fn {_, v} -> is_nil(v) end)
-            |> Map.new()
+            attrs =
+              %{}
+              |> maybe_put(params, "title")
+              |> maybe_put(params, "description")
+              |> maybe_put(params, "embed_url")
+              |> maybe_put(params, "file_url")
+              |> maybe_put(params, "original_url")
+              |> maybe_put(params, "thumbnail_url")
+              |> maybe_put(params, "width")
+              |> maybe_put(params, "height")
+              |> maybe_put(params, "upload_id")
+              |> (fn a ->
+                case Map.fetch(params, "is_draft") do
+                  {:ok, v} -> Map.put(a, "is_draft", parse_bool(v, true))
+                  :error   -> a
+                end
+              end).()
 
             case Items.update_and_publish(item, attrs, tag_ids_validated) do
               {:ok, updated}      -> json_resp(conn, 200, %{item: item_json(updated, user)})
@@ -259,16 +292,13 @@ defmodule NexusGallery.ApiRouter do
     end)
   end
 
-  # DELETE /items/:id
-  # Owner or admin only.
   delete "/items/:id" do
     require_auth(conn, fn conn ->
       user = conn.assigns.current_user
-
       case Items.get_item(conn.params["id"]) do
-        nil -> json_resp(conn, 404, %{error: "Item not found"})
+        nil  -> json_resp(conn, 404, %{error: "Item not found"})
         item ->
-          unless to_string(user.id) == to_string(item.user_id) || user.role in ["admin", "moderator"] do
+          unless user.id == item.user_id || user.role in ["admin", "moderator"] do
             json_resp(conn, 403, %{error: "Access denied"})
           else
             case Items.delete_item(item) do
@@ -281,6 +311,34 @@ defmodule NexusGallery.ApiRouter do
   end
 
   # -------------------------------------------------------------------------
+  # Stats and widgets (Phase 4)
+  # -------------------------------------------------------------------------
+
+  get "/stats" do
+    require_permission(conn, "can_view_gallery", fn conn ->
+      json_resp(conn, 200, Items.stats())
+    end)
+  end
+
+  get "/top-rated" do
+    require_permission(conn, "can_view_gallery", fn conn ->
+      limit = parse_int(conn.query_params["limit"], 4)
+      items = Items.top_rated(limit)
+      json_resp(conn, 200, %{items: Enum.map(items, &widget_item_json/1)})
+    end)
+  end
+
+  get "/top-uploaders" do
+    require_permission(conn, "can_view_gallery", fn conn ->
+      limit = parse_int(conn.query_params["limit"], 4)
+      rows = Items.top_uploaders(limit)
+      json_resp(conn, 200, %{uploaders: Enum.map(rows, fn r ->
+        %{user: r.user, count: r.count}
+      end)})
+    end)
+  end
+
+  # -------------------------------------------------------------------------
   # Catch-all
   # -------------------------------------------------------------------------
 
@@ -289,48 +347,68 @@ defmodule NexusGallery.ApiRouter do
   end
 
   # -------------------------------------------------------------------------
-  # Private helpers
+  # JSON serialisers
   # -------------------------------------------------------------------------
 
+  # Full item JSON — used for detail page and metadata form
   defp item_json(item, current_user) do
     tags = Map.get(item, :tags, [])
-
+    user = Map.get(item, :user)
     %{
-      id:           item.id,
-      user_id:      item.user_id,
-      title:        item.title,
-      description:  item.description,
-      media_type:   item.media_type,
-      is_draft:     item.is_draft,
-      is_featured:  item.is_featured,
-      view_count:   item.view_count,
-      file_url:     item.file_url,
-      original_url: item.original_url,
+      id:            item.id,
+      user_id:       item.user_id,
+      user:          user,
+      title:         item.title,
+      description:   item.description,
+      media_type:    item.media_type,
+      is_draft:      item.is_draft,
+      is_featured:   item.is_featured,
+      view_count:    item.view_count,
+      file_url:      item.file_url,
+      original_url:  item.original_url,
       thumbnail_url: item.thumbnail_url,
-      embed_url:    item.embed_url,
-      width:        item.width,
-      height:       item.height,
-      upload_id:    item.upload_id,
-      tags:         Enum.map(tags, &tag_json/1),
-      can_edit:     can_edit?(item, current_user),
-      can_delete:   can_delete?(item, current_user),
-      can_feature:  can_feature?(current_user),
-      inserted_at:  item.inserted_at
+      embed_url:     item.embed_url,
+      width:         item.width,
+      height:        item.height,
+      upload_id:     item.upload_id,
+      tags:          Enum.map(tags, &tag_json/1),
+      can_edit:      can_edit?(item, current_user),
+      can_delete:    can_delete?(item, current_user),
+      can_feature:   can_feature?(current_user),
+      inserted_at:   item.inserted_at
     }
   end
 
-  defp can_edit?(item, nil), do: false
-  defp can_edit?(item, user) do
-    to_string(user.id) == to_string(item.user_id) || user.role in ["admin", "moderator"]
+  # Compact item JSON for browse grid cards
+  defp browse_item_json(item) do
+    user = Map.get(item, :user)
+    %{
+      id:            item.id,
+      user_id:       item.user_id,
+      user:          user,
+      title:         item.title,
+      media_type:    item.media_type,
+      is_featured:   item.is_featured,
+      file_url:      item.file_url,
+      thumbnail_url: item.thumbnail_url,
+      embed_url:     item.embed_url,
+      width:         item.width,
+      height:        item.height,
+      view_count:    item.view_count,
+      inserted_at:   item.inserted_at
+    }
   end
 
-  defp can_delete?(item, nil), do: false
-  defp can_delete?(item, user) do
-    to_string(user.id) == to_string(item.user_id) || user.role in ["admin", "moderator"]
+  # Minimal item JSON for right widgets
+  defp widget_item_json(item) do
+    %{
+      id:            item.id,
+      title:         item.title,
+      thumbnail_url: item.thumbnail_url,
+      file_url:      item.file_url,
+      view_count:    item.view_count
+    }
   end
-
-  defp can_feature?(nil),  do: false
-  defp can_feature?(user), do: user.role in ["admin", "moderator"]
 
   defp tag_json(tag) do
     %{
@@ -346,6 +424,19 @@ defmodule NexusGallery.ApiRouter do
       inserted_at:  tag.inserted_at
     }
   end
+
+  defp can_edit?(_item, nil),  do: false
+  defp can_edit?(item, user),  do: user.id == item.user_id || user.role in ["admin", "moderator"]
+
+  defp can_delete?(_item, nil), do: false
+  defp can_delete?(item, user), do: user.id == item.user_id || user.role in ["admin", "moderator"]
+
+  defp can_feature?(nil),  do: false
+  defp can_feature?(user), do: user.role in ["admin", "moderator"]
+
+  # -------------------------------------------------------------------------
+  # Private helpers
+  # -------------------------------------------------------------------------
 
   defp format_errors(changeset) do
     Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->

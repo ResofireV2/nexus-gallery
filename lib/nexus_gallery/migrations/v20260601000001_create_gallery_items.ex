@@ -4,7 +4,7 @@ defmodule NexusGallery.Migrations.V20260601000001CreateGalleryItems do
   def change do
     create table(:nexus_gallery_items, primary_key: false) do
       add :id,          :uuid, primary_key: true, null: false
-      add :user_id,     :uuid, null: false
+      add :user_id,      :integer, null: false
       add :title,       :string
       add :description, :text
       add :media_type,  :string, null: false, default: "image"
@@ -18,7 +18,7 @@ defmodule NexusGallery.Migrations.V20260601000001CreateGalleryItems do
       add :width,       :integer
       add :height,      :integer
       add :upload_id,   :uuid
-      add :source_post_id, :uuid
+      add :source_post_id, :integer
       timestamps(type: :utc_datetime)
     end
 

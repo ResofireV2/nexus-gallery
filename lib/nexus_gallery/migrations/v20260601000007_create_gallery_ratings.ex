@@ -4,7 +4,7 @@ defmodule NexusGallery.Migrations.V20260601000007CreateGalleryRatings do
   def change do
     create table(:nexus_gallery_ratings, primary_key: false) do
       add :id,           :uuid, primary_key: true, null: false
-      add :user_id,      :uuid, null: false
+      add :user_id,      :integer, null: false
       add :subject_type, :string, null: false
       add :subject_id,   :uuid, null: false
       add :value,        :integer, null: false

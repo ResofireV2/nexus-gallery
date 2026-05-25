@@ -4,7 +4,7 @@ defmodule NexusGallery.Migrations.V20260601000004CreateGalleryCollections do
   def change do
     create table(:nexus_gallery_collections, primary_key: false) do
       add :id,           :uuid, primary_key: true, null: false
-      add :user_id,      :uuid, null: false
+      add :user_id,      :integer, null: false
       add :title,        :string, null: false
       add :slug,         :string, null: false
       add :description,  :text
