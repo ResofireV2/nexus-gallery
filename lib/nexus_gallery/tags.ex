@@ -3,6 +3,15 @@ defmodule NexusGallery.Tags do
   alias Nexus.Repo
   alias NexusGallery.Tag
 
+  defp uuid_bin(nil), do: nil
+  defp uuid_bin(bin) when is_binary(bin) and byte_size(bin) == 16, do: bin
+  defp uuid_bin(str) when is_binary(str) do
+    case Ecto.UUID.dump(str) do
+      {:ok, bin} -> bin
+      :error     -> nil
+    end
+  end
+
   @doc "Returns all tags ordered by position ascending."
   def list_tags do
     from(t in Tag, order_by: [asc: t.position, asc: t.inserted_at])
@@ -11,7 +20,7 @@ defmodule NexusGallery.Tags do
 
   @doc "Returns a single tag by id (string UUID), or nil."
   def get_tag(id) do
-    Repo.one(from t in Tag, where: fragment("? = ?::uuid", t.id, type(^id, :string)))
+    Repo.one(from t in Tag, where: t.id == type(^uuid_bin(id), :uuid))
   end
 
   @doc "Returns a single tag by slug, or nil."
@@ -48,7 +57,7 @@ defmodule NexusGallery.Tags do
       ordered_ids
       |> Enum.with_index()
       |> Enum.each(fn {id, index} ->
-        from(t in Tag, where: fragment("? = ?::uuid", t.id, type(^id, :string)))
+        from(t in Tag, where: t.id == type(^uuid_bin(id), :uuid))
         |> Repo.update_all(set: [position: index])
       end)
     end)

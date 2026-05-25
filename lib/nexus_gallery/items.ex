@@ -57,12 +57,12 @@ defmodule NexusGallery.Items do
 
   @doc "Returns a single item struct by id, or nil."
   def get_item(id) do
-    Repo.one(from i in Item, where: fragment("? = ?::uuid", i.id, type(^id, :string)))
+    Repo.one(from i in Item, where: i.id == type(^uuid_bin(id), :uuid))
   end
 
   @doc "Returns item as a plain map with tags and user, or nil."
   def get_item_with_tags(id) do
-    case Repo.one(from i in Item, where: fragment("? = ?::uuid", i.id, type(^id, :string))) do
+    case Repo.one(from i in Item, where: i.id == type(^uuid_bin(id), :uuid)) do
       nil  -> nil
       item ->
         m = to_map(item)
@@ -97,7 +97,7 @@ defmodule NexusGallery.Items do
     Repo.transaction(fn ->
       Repo.delete_all(
         from it in "nexus_gallery_item_tags",
-          where: fragment("? = ?::uuid", it.item_id, type(^id_str, :string))
+          where: it.item_id == type(^uuid_bin(id_str), :uuid)
       )
       Repo.delete!(item)
     end)
@@ -158,6 +158,18 @@ defmodule NexusGallery.Items do
   end
   defp uuid_str(str) when is_binary(str), do: str
 
+  # Convert a string UUID to a 16-byte binary for Postgrex.
+  # Postgrex's uuid encoder (OID 2950) expects a raw 16-byte binary.
+  # Use type(^uuid_bin(id), :uuid) in queries — NOT type(^id, :binary_id).
+  defp uuid_bin(nil), do: nil
+  defp uuid_bin(bin) when is_binary(bin) and byte_size(bin) == 16, do: bin
+  defp uuid_bin(str) when is_binary(str) do
+    case Ecto.UUID.dump(str) do
+      {:ok, bin} -> bin
+      :error     -> nil
+    end
+  end
+
   defp to_map(%Item{} = i) do
     %{
       id:             uuid_str(i.id),
@@ -187,15 +199,15 @@ defmodule NexusGallery.Items do
     id_str = uuid_str(item_id)
     tag_ids =
       from(it in "nexus_gallery_item_tags",
-        where: fragment("? = ?::uuid", it.item_id, type(^id_str, :string)),
-        select: fragment("?::text", it.tag_id))
+        where: it.item_id == type(^uuid_bin(id_str), :uuid),
+        select: type(it.tag_id, :binary_id))
       |> Repo.all()
 
     if tag_ids == [] do
       []
     else
       from(t in NexusGallery.Tag,
-        where: fragment("?::text", t.id) in ^tag_ids,
+        where: t.id in ^tag_ids,
         order_by: t.position)
       |> Repo.all()
       |> Enum.map(&tag_to_map/1)
@@ -289,7 +301,7 @@ defmodule NexusGallery.Items do
     id_str = uuid_str(item_id)
     Repo.delete_all(
       from it in "nexus_gallery_item_tags",
-        where: fragment("? = ?::uuid", it.item_id, type(^id_str, :string))
+        where: it.item_id == type(^uuid_bin(id_str), :uuid)
     )
     rows = Enum.map(tag_ids, fn tag_id ->
       %{item_id: id_str, tag_id: tag_id}
