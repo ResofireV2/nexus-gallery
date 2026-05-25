@@ -129,14 +129,24 @@
               var u = prev.slice(); u[idx] = Object.assign({}, u[idx], { progress: pct }); return u;
             });
           }, isVideo).then(function (r) {
-            // Save file_url, original_url and upload_id back to the draft item
-            // so the detail page can display the image when it loads.
-            // draftId is in scope here because this .then() is nested inside
-            // the outer .then() where draftId was declared.
+            // For video items, generate a client-side thumbnail and upload it
+            if (isVideo) {
+              return generateVideoThumbnail(entry.file).then(function (thumbBlob) {
+                if (!thumbBlob) return r;
+                var thumbFile = new File([thumbBlob], "thumbnail.jpg", { type: "image/jpeg" });
+                return uploadFileXhr(thumbFile, draftId, function () {}, false)
+                  .then(function (thumbR) { return Object.assign({}, r, { thumbnail_url: thumbR.url }); })
+                  .catch(function () { return r; });
+              });
+            }
+            return r;
+          }).then(function (r) {
+            // Save file_url, original_url, thumbnail_url and upload_id back to the draft item
             return apiPatch("/items/" + draftId, {
-              file_url:     r.url,
-              original_url: r.original_url,
-              upload_id:    r.upload ? r.upload.id : null,
+              file_url:      r.url,
+              original_url:  r.original_url,
+              thumbnail_url: r.thumbnail_url || null,
+              upload_id:     r.upload ? r.upload.id : null,
             }).then(function () {
               setEntries(function (prev) {
                 var u = prev.slice();
@@ -174,7 +184,7 @@
         style: { background: "var(--s2)", border: "0.5px solid var(--b2)", borderRadius: 14, padding: 24, width: 540, maxWidth: "calc(100vw - 32px)", maxHeight: "80vh", overflow: "hidden", display: "flex", flexDirection: "column", gap: 16 }
       },
         React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
-          React.createElement("span", { style: { fontSize: 15, fontWeight: 500, color: "var(--t1)" } }, "Upload images"),
+          React.createElement("span", { style: { fontSize: 15, fontWeight: 500, color: "var(--t1)" } }, videosEnabled ? "Upload media" : "Upload images"),
           React.createElement("button", { onClick: onClose, disabled: anyUploading, style: { background: "none", border: "none", color: "var(--t4)", cursor: "pointer", fontSize: 18 } },
             React.createElement("i", { className: "fa-solid fa-xmark" }))
         ),
@@ -288,6 +298,48 @@
         )
       )
     );
+  }
+
+  // ─── Video thumbnail generation ──────────────────────────────────────────
+  // Seeks to 1s (or first frame if shorter), draws to canvas, returns a Blob.
+
+  function generateVideoThumbnail(file) {
+    return new Promise(function (resolve) {
+      var url   = URL.createObjectURL(file);
+      var video = document.createElement("video");
+      video.preload  = "metadata";
+      video.muted    = true;
+      video.playsInline = true;
+      video.src = url;
+
+      function cleanup() { URL.revokeObjectURL(url); }
+
+      video.addEventListener("loadedmetadata", function () {
+        video.currentTime = Math.min(1, video.duration || 0);
+      });
+
+      video.addEventListener("seeked", function () {
+        try {
+          var canvas = document.createElement("canvas");
+          canvas.width  = video.videoWidth  || 640;
+          canvas.height = video.videoHeight || 360;
+          var ctx = canvas.getContext("2d");
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(function (blob) {
+            cleanup();
+            resolve(blob);
+          }, "image/jpeg", 0.85);
+        } catch (e) {
+          cleanup();
+          resolve(null);
+        }
+      });
+
+      video.addEventListener("error", function () { cleanup(); resolve(null); });
+
+      // Fallback: if seeked never fires within 3s, give up
+      setTimeout(function () { cleanup(); resolve(null); }, 3000);
+    });
   }
 
   // ─── EmbedModal ──────────────────────────────────────────────────────────

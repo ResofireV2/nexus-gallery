@@ -89,7 +89,7 @@ defmodule NexusGallery.ApiRouter do
     s = settings()
     json_resp(conn, 200, %{
       permissions:       resolved,
-      videos_enabled:    s["videos_enabled"] == true,
+      videos_enabled:    parse_bool(s["videos_enabled"], false),
       embeds_enabled:    s["embeds_enabled"] != false,
       ratings_enabled:       s["ratings_enabled"] == true,
       reactions_enabled:     s["reactions_enabled"] == true,
@@ -232,7 +232,7 @@ defmodule NexusGallery.ApiRouter do
       media_type = conn.body_params["media_type"] || "image"
       s          = settings()
 
-      if media_type == "video" and s["videos_enabled"] != true do
+      if media_type == "video" and not parse_bool(s["videos_enabled"], false) do
         json_resp(conn, 403, %{error: "Video uploads are not enabled on this forum"})
       else
         case Items.create_draft(user.id, media_type) do
