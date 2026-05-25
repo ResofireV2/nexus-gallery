@@ -13,37 +13,28 @@ defmodule NexusGallery.Items do
     media_type: "image" | "video" | "embed"
     user_id:    filter by uploader user_id (integer)
     search:     title search string
-  Returns {items_with_user, total_count}
+  Returns {items_as_maps, total_count}
   """
   def list_items(opts \\ []) do
-    page      = Keyword.get(opts, :page, 1) |> max(1)
-    per_page  = Keyword.get(opts, :per_page, 36) |> min(60) |> max(1)
-    sort      = Keyword.get(opts, :sort, "newest")
-    tag_slug  = Keyword.get(opts, :tag_slug)
-    media     = Keyword.get(opts, :media_type)
-    uid       = Keyword.get(opts, :user_id)
-    search    = Keyword.get(opts, :search)
+    page     = Keyword.get(opts, :page, 1) |> max(1)
+    per_page = Keyword.get(opts, :per_page, 36) |> min(60) |> max(1)
+    sort     = Keyword.get(opts, :sort, "newest")
+    tag_slug = Keyword.get(opts, :tag_slug)
+    media    = Keyword.get(opts, :media_type)
+    uid      = Keyword.get(opts, :user_id)
+    search   = Keyword.get(opts, :search)
+    offset   = (page - 1) * per_page
 
-    offset = (page - 1) * per_page
+    base = from i in Item, where: i.is_draft == false
 
-    base =
-      from i in Item,
-        where: i.is_draft == false
-
-    base =
-      if media, do: from(i in base, where: i.media_type == ^media), else: base
-
-    base =
-      if uid, do: from(i in base, where: i.user_id == ^uid), else: base
-
+    base = if media,  do: from(i in base, where: i.media_type == ^media),      else: base
+    base = if uid,    do: from(i in base, where: i.user_id == ^uid),            else: base
     base =
       if search && search != "" do
-        pattern = "%#{search}%"
-        from i in base, where: ilike(i.title, ^pattern)
+        from i in base, where: ilike(i.title, ^"%#{search}%")
       else
         base
       end
-
     base =
       if tag_slug do
         from i in base,
@@ -62,11 +53,9 @@ defmodule NexusGallery.Items do
         _                -> from i in base, order_by: [desc: i.inserted_at, desc: i.id]
       end
 
-    total   = Repo.aggregate(base, :count, :id)
-    items   = sorted |> limit(^per_page) |> offset(^offset) |> Repo.all()
-    enriched = enrich_with_users(items)
-
-    {enriched, total}
+    total  = Repo.aggregate(base, :count, :id)
+    items  = sorted |> limit(^per_page) |> offset(^offset) |> Repo.all()
+    {enrich_list(items), total}
   end
 
   @doc "Creates an empty draft item. Returns {:ok, item} or {:error, changeset}."
@@ -76,49 +65,40 @@ defmodule NexusGallery.Items do
     |> Repo.insert()
   end
 
-  @doc "Returns a single item by id, or nil."
-  def get_item(id) do
-    Repo.get(Item, id)
-  end
+  @doc "Returns a single item struct by id, or nil."
+  def get_item(id), do: Repo.get(Item, id)
 
-  @doc "Returns item with preloaded tags and user info."
+  @doc "Returns item as a plain map with tags list and user map, or nil."
   def get_item_with_tags(id) do
     case Repo.get(Item, id) do
       nil  -> nil
-      item ->
-        item
-        |> preload_tags()
-        |> enrich_with_user()
+      item -> item |> to_map() |> put_tags() |> put_user()
     end
   end
 
   @doc "Saves upload result fields onto a draft item."
   def save_upload_result(%Item{} = item, attrs) do
-    item
-    |> Item.upload_changeset(attrs)
-    |> Repo.update()
+    item |> Item.upload_changeset(attrs) |> Repo.update()
   end
 
   @doc """
   Updates metadata and optionally publishes a draft item.
   tag_ids is an optional list of tag UUID strings.
+  Returns {:ok, map} or {:error, changeset}.
   """
   def update_and_publish(%Item{} = item, attrs, tag_ids \\ nil) do
     Repo.transaction(fn ->
       case item |> Item.publish_changeset(attrs) |> Repo.update() do
         {:ok, updated} ->
           if is_list(tag_ids), do: set_tags(updated.id, tag_ids)
-          updated
-          |> preload_tags()
-          |> enrich_with_user()
-
+          updated |> to_map() |> put_tags() |> put_user()
         {:error, cs} ->
           Repo.rollback(cs)
       end
     end)
   end
 
-  @doc "Deletes an item and its tag associations."
+  @doc "Deletes an item and its tag associations. Returns :ok or {:error, reason}."
   def delete_item(%Item{} = item) do
     Repo.transaction(fn ->
       Repo.delete_all(from it in "nexus_gallery_item_tags", where: it.item_id == ^item.id)
@@ -131,21 +111,16 @@ defmodule NexusGallery.Items do
   end
 
   # ---------------------------------------------------------------------------
-  # Stats — used by admin Stats tab and right widgets
+  # Stats
   # ---------------------------------------------------------------------------
 
   def stats do
-    total_images  = Repo.aggregate(from(i in Item, where: i.media_type == "image"  and i.is_draft == false), :count, :id)
-    total_videos  = Repo.aggregate(from(i in Item, where: i.media_type == "video"  and i.is_draft == false), :count, :id)
-    total_embeds  = Repo.aggregate(from(i in Item, where: i.media_type == "embed"  and i.is_draft == false), :count, :id)
-    week_ago      = DateTime.utc_now() |> DateTime.add(-7 * 86400, :second)
-    this_week     = Repo.aggregate(from(i in Item, where: i.is_draft == false and i.inserted_at >= ^week_ago), :count, :id)
-
+    week_ago = DateTime.utc_now() |> DateTime.add(-7 * 86400, :second)
     %{
-      total_images:  total_images,
-      total_videos:  total_videos,
-      total_embeds:  total_embeds,
-      this_week:     this_week
+      total_images: Repo.aggregate(from(i in Item, where: i.media_type == "image"  and i.is_draft == false), :count, :id),
+      total_videos: Repo.aggregate(from(i in Item, where: i.media_type == "video"  and i.is_draft == false), :count, :id),
+      total_embeds: Repo.aggregate(from(i in Item, where: i.media_type == "embed"  and i.is_draft == false), :count, :id),
+      this_week:    Repo.aggregate(from(i in Item, where: i.is_draft == false and i.inserted_at >= ^week_ago), :count, :id),
     }
   end
 
@@ -155,7 +130,7 @@ defmodule NexusGallery.Items do
       order_by: [desc: i.view_count, desc: i.inserted_at],
       limit: ^limit)
     |> Repo.all()
-    |> enrich_with_users()
+    |> enrich_list()
   end
 
   def top_uploaders(limit \\ 4) do
@@ -166,40 +141,98 @@ defmodule NexusGallery.Items do
       order_by: [desc: count(i.id)],
       limit: ^limit)
     |> Repo.all()
-    |> enrich_uploader_users()
+    |> enrich_uploader_list()
   end
 
   # ---------------------------------------------------------------------------
-  # Private helpers
+  # Private — struct → map conversion
   # ---------------------------------------------------------------------------
 
-  defp set_tags(item_id, tag_ids) do
-    Repo.delete_all(from it in "nexus_gallery_item_tags", where: it.item_id == ^item_id)
-    rows = Enum.map(tag_ids, fn tag_id -> %{item_id: item_id, tag_id: tag_id} end)
-    if rows != [] do
-      Repo.insert_all("nexus_gallery_item_tags", rows, on_conflict: :nothing)
-    end
+  # Convert an Ecto struct to a plain map so we can add arbitrary keys.
+  defp to_map(%Item{} = item) do
+    %{
+      id:            item.id,
+      user_id:       item.user_id,
+      title:         item.title,
+      description:   item.description,
+      media_type:    item.media_type,
+      is_draft:      item.is_draft,
+      is_featured:   item.is_featured,
+      view_count:    item.view_count,
+      embed_url:     item.embed_url,
+      file_url:      item.file_url,
+      original_url:  item.original_url,
+      thumbnail_url: item.thumbnail_url,
+      width:         item.width,
+      height:        item.height,
+      upload_id:     item.upload_id,
+      source_post_id: item.source_post_id,
+      inserted_at:   item.inserted_at,
+      updated_at:    item.updated_at,
+    }
   end
 
-  defp preload_tags(%Item{} = item) do
+  defp put_tags(item_map) do
     tag_ids =
-      from(it in "nexus_gallery_item_tags", where: it.item_id == ^item.id, select: it.tag_id)
+      from(it in "nexus_gallery_item_tags",
+        where: it.item_id == ^item_map.id,
+        select: it.tag_id)
       |> Repo.all()
 
     tags =
       if tag_ids == [] do
         []
       else
-        from(t in NexusGallery.Tag, where: t.id in ^tag_ids, order_by: t.position)
+        from(t in NexusGallery.Tag,
+          where: t.id in ^tag_ids,
+          order_by: t.position)
         |> Repo.all()
+        |> Enum.map(&tag_to_map/1)
       end
 
-    Map.put(item, :tags, tags)
+    Map.put(item_map, :tags, tags)
   end
 
-  # Fetch user rows for a list of items in one query using string table name.
-  defp enrich_with_users(items) when is_list(items) do
-    user_ids = items |> Enum.map(& &1.user_id) |> Enum.uniq() |> Enum.reject(&is_nil/1)
+  defp put_user(item_map) do
+    user = fetch_user(item_map.user_id)
+    Map.put(item_map, :user, user)
+  end
+
+  defp tag_to_map(tag) do
+    %{
+      id:           tag.id,
+      name:         tag.name,
+      slug:         tag.slug,
+      color:        tag.color,
+      position:     tag.position,
+      allow_images: tag.allow_images,
+      allow_videos: tag.allow_videos,
+      allow_embeds: tag.allow_embeds,
+      item_count:   tag.item_count,
+    }
+  end
+
+  # Fetch a single user row from the "users" string table.
+  # username is citext in Postgres — we cast it to :string for Ecto.
+  defp fetch_user(nil), do: nil
+  defp fetch_user(user_id) do
+    case Repo.one(
+      from u in "users",
+        where: u.id == ^user_id,
+        select: %{id: u.id, username: type(u.username, :string), avatar_url: u.avatar_url}
+    ) do
+      nil  -> nil
+      user -> user
+    end
+  end
+
+  # Batch-fetch users for a list of item maps.
+  defp enrich_list(items) when is_list(items) do
+    user_ids =
+      items
+      |> Enum.map(& &1.user_id)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
 
     users =
       if user_ids == [] do
@@ -207,43 +240,39 @@ defmodule NexusGallery.Items do
       else
         from(u in "users",
           where: u.id in ^user_ids,
-          select: {u.id, u.username, u.avatar_url})
+          select: %{id: u.id, username: type(u.username, :string), avatar_url: u.avatar_url})
         |> Repo.all()
-        |> Map.new(fn {id, username, avatar} -> {id, %{id: id, username: username, avatar_url: avatar}} end)
+        |> Map.new(fn u -> {u.id, u} end)
       end
 
     Enum.map(items, fn item ->
-      Map.put(item, :user, Map.get(users, item.user_id))
+      m = to_map(item)
+      Map.put(m, :user, Map.get(users, item.user_id))
     end)
   end
 
-  defp enrich_with_user(%Item{} = item) do
-    user =
-      if item.user_id do
-        case Repo.one(from u in "users", where: u.id == ^item.user_id, select: {u.id, u.username, u.avatar_url}) do
-          {id, username, avatar} -> %{id: id, username: username, avatar_url: avatar}
-          nil                    -> nil
-        end
-      end
+  defp enrich_uploader_list(rows) do
+    user_ids = rows |> Enum.map(& &1.user_id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
-    Map.put(item, :user, user)
-  end
-
-  defp enrich_uploader_users(rows) do
-    user_ids = Enum.map(rows, & &1.user_id)
     users =
       if user_ids == [] do
         %{}
       else
         from(u in "users",
           where: u.id in ^user_ids,
-          select: {u.id, u.username, u.avatar_url})
+          select: %{id: u.id, username: type(u.username, :string), avatar_url: u.avatar_url})
         |> Repo.all()
-        |> Map.new(fn {id, username, avatar} -> {id, %{id: id, username: username, avatar_url: avatar}} end)
+        |> Map.new(fn u -> {u.id, u} end)
       end
 
     Enum.map(rows, fn row ->
       Map.put(row, :user, Map.get(users, row.user_id))
     end)
+  end
+
+  defp set_tags(item_id, tag_ids) do
+    Repo.delete_all(from it in "nexus_gallery_item_tags", where: it.item_id == ^item_id)
+    rows = Enum.map(tag_ids, fn tag_id -> %{item_id: item_id, tag_id: tag_id} end)
+    if rows != [], do: Repo.insert_all("nexus_gallery_item_tags", rows, on_conflict: :nothing)
   end
 end
