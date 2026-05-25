@@ -1033,6 +1033,68 @@
   }
 
 
+  // ─── FollowButton ────────────────────────────────────────────────────────
+
+  // Generic follow/unfollow toggle for items, collections, and tags.
+  // Props: subjectType ("item"|"collection"|"tag"), subjectId (UUID string),
+  //        currentUser, size ("sm"|"md", default "md")
+  function FollowButton(props) {
+    var subjectType = props.subjectType;
+    var subjectId   = props.subjectId;
+    var currentUser = props.currentUser;
+    var size        = props.size || "md";
+
+    var _subscribed = useState(null); var subscribed = _subscribed[0]; var setSubscribed = _subscribed[1];
+    var _busy       = useState(false);var busy       = _busy[0];       var setBusy       = _busy[1];
+
+    useEffect(function () {
+      if (!currentUser || !subjectId) return;
+      apiGet("/subscriptions/check?subject_type=" + subjectType + "&subject_id=" + subjectId)
+        .then(function (d) { setSubscribed(!!d.subscribed); })
+        .catch(function () { setSubscribed(false); });
+    }, [subjectId, subjectType, currentUser && currentUser.id]);
+
+    if (!currentUser) return null;
+    if (subscribed === null) return null; // still loading — render nothing
+
+    var isSmall = size === "sm";
+
+    function handleToggle() {
+      setBusy(true);
+      var req = subscribed
+        ? apiDelete("/subscriptions/" + subjectType + "/" + subjectId)
+        : apiPost("/subscriptions", { subject_type: subjectType, subject_id: subjectId });
+      req.then(function (d) {
+          if (typeof d.subscribed === "boolean") setSubscribed(d.subscribed);
+          else toast(d.error || "Failed", "err");
+        })
+        .catch(function () { toast("Failed", "err"); })
+        .finally(function () { setBusy(false); });
+    }
+
+    return React.createElement("button", {
+      onClick: handleToggle,
+      disabled: busy,
+      className: subscribed ? "btn-ghost" : "btn-ghost",
+      style: {
+        fontSize:    isSmall ? 11.5 : 12.5,
+        padding:     isSmall ? "3px 10px" : "5px 12px",
+        display:     "inline-flex",
+        alignItems:  "center",
+        gap:         5,
+        color:       subscribed ? "var(--ac-text)" : "var(--t4)",
+        borderColor: subscribed ? "var(--ac-border)" : undefined,
+        background:  subscribed ? "var(--ac-bg)" : undefined,
+      }
+    },
+      React.createElement("i", {
+        className: subscribed ? "fa-solid fa-bell-slash" : "fa-solid fa-bell",
+        style: { fontSize: isSmall ? 10 : 11 }
+      }),
+      subscribed ? "Following" : "Follow"
+    );
+  }
+
   // ─── Placeholder routes ───────────────────────────────────────────────────
 
   function Placeholder(props) {
@@ -1496,7 +1558,12 @@
           },
             React.createElement("i", { className: "fa-solid fa-layer-group", style: { marginRight: 5 } }),
             "Collect"
-          )
+          ),
+          item && React.createElement(FollowButton, {
+            subjectType: "item",
+            subjectId:   uuid,
+            currentUser: currentUser,
+          })
         )
       ),
 
@@ -1854,8 +1921,13 @@
             style: { fontSize: 14, color: "var(--t3)", margin: 0, lineHeight: 1.6 }
           }, coll.description)
         ),
-        isOwner && React.createElement("div", { style: { display: "flex", gap: 8, flexShrink: 0 } },
-          React.createElement("button", {
+        React.createElement("div", { style: { display: "flex", gap: 8, flexShrink: 0, alignItems: "center" } },
+          React.createElement(FollowButton, {
+            subjectType: "collection",
+            subjectId:   coll.id,
+            currentUser: currentUser,
+          }),
+          isOwner && React.createElement("button", {
             className: "btn-ghost",
             style: { fontSize: 12.5, color: "var(--red)", borderColor: "rgba(239,68,68,0.3)" },
             onClick: handleDelete, disabled: deleting
@@ -1899,8 +1971,196 @@
           )
     );
   }
-  function GalleryTagPage()     { return React.createElement(Placeholder, { title: "Gallery tag" }); }
-  function GalleryUserPage()    { return React.createElement(Placeholder, { title: "Gallery uploads" }); }
+  function GalleryTagPage(props) {
+    var slug        = props.slug;
+    var currentUser = props.currentUser;
+    var isMobile    = useIsMobile();
+
+    var _tag      = useState(null);  var tag      = _tag[0];      var setTag      = _tag[1];
+    var _items    = useState([]);    var items    = _items[0];    var setItems    = _items[1];
+    var _total    = useState(0);     var total    = _total[0];    var setTotal    = _total[1];
+    var _pages    = useState(1);     var pages    = _pages[0];    var setPages    = _pages[1];
+    var _page     = useState(1);     var page     = _page[0];     var setPage     = _page[1];
+    var _loading  = useState(true);  var loading  = _loading[0];  var setLoading  = _loading[1];
+
+    useEffect(function () {
+      apiGet("/tags/public").then(function (d) {
+        var found = (d.tags || []).find(function (t) { return t.slug === slug; });
+        setTag(found || null);
+      }).catch(function () {});
+    }, [slug]);
+
+    useEffect(function () {
+      setLoading(true);
+      apiGet("/items?tag=" + encodeURIComponent(slug) + "&page=" + page + "&sort=newest")
+        .then(function (d) {
+          setItems(d.items || []);
+          setTotal(d.total || 0);
+          setPages(d.total_pages || 1);
+          setLoading(false);
+        })
+        .catch(function () { setLoading(false); });
+    }, [slug, page]);
+
+    return React.createElement("div", { style: { paddingBottom: 32 } },
+      // Back button
+      React.createElement("button", {
+        className: "btn-ghost",
+        style: { fontSize: 12.5, marginBottom: 16, display: "inline-flex", alignItems: "center", gap: 6 },
+        onClick: function () {
+          sessionStorage.setItem("gallery_tab", "Images");
+          NE.navigate("/ext/" + SLUG);
+        }
+      },
+        React.createElement("i", { className: "fa-solid fa-arrow-left", style: { fontSize: 11 } }),
+        " Gallery"
+      ),
+
+      // Tag header
+      tag && React.createElement("div", {
+        style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, gap: 12 }
+      },
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+          React.createElement("div", {
+            style: { width: 14, height: 14, borderRadius: "50%", background: tag.color, flexShrink: 0 }
+          }),
+          React.createElement("h1", { style: { fontSize: 22, fontWeight: 700, color: "var(--t1)", margin: 0 } }, tag.name),
+          React.createElement("span", { style: { fontSize: 13, color: "var(--t5)" } }, total + " items")
+        ),
+        React.createElement(FollowButton, { subjectType: "tag", subjectId: tag.id, currentUser: currentUser })
+      ),
+
+      // Grid
+      loading
+        ? React.createElement("div", { style: { textAlign: "center", padding: "48px 0", color: "var(--t5)" } },
+            React.createElement("i", { className: "fa-solid fa-spinner fa-spin" }))
+        : items.length === 0
+          ? React.createElement("div", { style: { textAlign: "center", padding: "48px 0", color: "var(--t5)", fontSize: 13 } },
+              "No items with this tag yet.")
+          : React.createElement("div", {
+              style: { display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: isMobile ? 8 : 10 }
+            },
+              items.map(function (item) {
+                return React.createElement(GalleryCard, { key: item.id, item: item, navigate: NE.navigate });
+              })
+            ),
+
+      // Pagination
+      pages > 1 && React.createElement("div", {
+        style: { display: "flex", justifyContent: "center", gap: 6, marginTop: 24 }
+      },
+        page > 1 && React.createElement("button", {
+          className: "btn-ghost", style: { fontSize: 12.5 },
+          onClick: function () { setPage(function (p) { return p - 1; }); window.scrollTo(0, 0); }
+        }, React.createElement("i", { className: "fa-solid fa-chevron-left" })),
+        React.createElement("span", { style: { fontSize: 12.5, color: "var(--t4)", padding: "6px 10px" } },
+          page + " / " + pages),
+        page < pages && React.createElement("button", {
+          className: "btn-ghost", style: { fontSize: 12.5 },
+          onClick: function () { setPage(function (p) { return p + 1; }); window.scrollTo(0, 0); }
+        }, React.createElement("i", { className: "fa-solid fa-chevron-right" }))
+      )
+    );
+  }
+  function GalleryUserPage(props) {
+    var username    = props.username;
+    var currentUser = props.currentUser;
+    var isMobile    = useIsMobile();
+
+    var _user     = useState(null);  var user     = _user[0];     var setUser     = _user[1];
+    var _items    = useState([]);    var items    = _items[0];    var setItems    = _items[1];
+    var _total    = useState(0);     var total    = _total[0];    var setTotal    = _total[1];
+    var _pages    = useState(1);     var pages    = _pages[0];    var setPages    = _pages[1];
+    var _page     = useState(1);     var page     = _page[0];     var setPage     = _page[1];
+    var _loading  = useState(true);  var loading  = _loading[0];  var setLoading  = _loading[1];
+    var _notFound = useState(false); var notFound = _notFound[0]; var setNotFound = _notFound[1];
+
+    useEffect(function () {
+      apiGet("/users/" + encodeURIComponent(username))
+        .then(function (d) {
+          if (d.user) setUser(d.user);
+          else setNotFound(true);
+        })
+        .catch(function () { setNotFound(true); });
+    }, [username]);
+
+    useEffect(function () {
+      if (!user) return;
+      setLoading(true);
+      apiGet("/items?user_id=" + user.id + "&page=" + page + "&sort=newest")
+        .then(function (d) {
+          setItems(d.items || []);
+          setTotal(d.total || 0);
+          setPages(d.total_pages || 1);
+          setLoading(false);
+        })
+        .catch(function () { setLoading(false); });
+    }, [user && user.id, page]);
+
+    if (notFound) return React.createElement("div", {
+      style: { padding: "80px 0", textAlign: "center", color: "var(--t5)", fontSize: 14 }
+    }, "User not found.");
+
+    return React.createElement("div", { style: { paddingBottom: 32 } },
+      // Back button
+      React.createElement("button", {
+        className: "btn-ghost",
+        style: { fontSize: 12.5, marginBottom: 16, display: "inline-flex", alignItems: "center", gap: 6 },
+        onClick: function () { NE.navigate("/ext/" + SLUG); }
+      },
+        React.createElement("i", { className: "fa-solid fa-arrow-left", style: { fontSize: 11 } }),
+        " Gallery"
+      ),
+
+      // User header
+      user && React.createElement("div", {
+        style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, gap: 12 }
+      },
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+          React.createElement(Av, { user: user, size: 40 }),
+          React.createElement("div", null,
+            React.createElement("div", { style: { fontSize: 18, fontWeight: 600, color: "var(--t1)" } }, user.username),
+            React.createElement("div", { style: { fontSize: 13, color: "var(--t5)", marginTop: 2 } },
+              total + " " + (total === 1 ? "upload" : "uploads")
+            )
+          )
+        ),
+        currentUser && currentUser.username !== user.username &&
+          React.createElement(FollowButton, { subjectType: "user", subjectId: user.id && user.id.toString(), currentUser: currentUser })
+      ),
+
+      // Grid
+      !user || loading
+        ? React.createElement("div", { style: { textAlign: "center", padding: "48px 0", color: "var(--t5)" } },
+            React.createElement("i", { className: "fa-solid fa-spinner fa-spin" }))
+        : items.length === 0
+          ? React.createElement("div", { style: { textAlign: "center", padding: "48px 0", color: "var(--t5)", fontSize: 13 } },
+              "No uploads yet.")
+          : React.createElement("div", {
+              style: { display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: isMobile ? 8 : 10 }
+            },
+              items.map(function (item) {
+                return React.createElement(GalleryCard, { key: item.id, item: item, navigate: NE.navigate });
+              })
+            ),
+
+      // Pagination
+      pages > 1 && React.createElement("div", {
+        style: { display: "flex", justifyContent: "center", gap: 6, marginTop: 24 }
+      },
+        page > 1 && React.createElement("button", {
+          className: "btn-ghost", style: { fontSize: 12.5 },
+          onClick: function () { setPage(function (p) { return p - 1; }); window.scrollTo(0, 0); }
+        }, React.createElement("i", { className: "fa-solid fa-chevron-left" })),
+        React.createElement("span", { style: { fontSize: 12.5, color: "var(--t4)", padding: "6px 10px" } },
+          page + " / " + pages),
+        page < pages && React.createElement("button", {
+          className: "btn-ghost", style: { fontSize: 12.5 },
+          onClick: function () { setPage(function (p) { return p + 1; }); window.scrollTo(0, 0); }
+        }, React.createElement("i", { className: "fa-solid fa-chevron-right" }))
+      )
+    );
+  }
 
   // ─── Right widgets (live in Phase 4) ─────────────────────────────────────
 

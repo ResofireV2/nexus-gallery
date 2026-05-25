@@ -918,6 +918,123 @@ defmodule NexusGallery.ApiRouter do
     end)
   end
 
+
+  # -------------------------------------------------------------------------
+  # User profile (gallery)
+  # -------------------------------------------------------------------------
+
+  get "/users/:username" do
+    require_permission(conn, "can_view_gallery", fn conn ->
+      username = conn.params["username"]
+      user = Nexus.Repo.one(
+        Ecto.Query.from u in "users",
+          where: fragment("lower(?::text)", u.username) == ^String.downcase(username),
+          select: %{
+            id:         u.id,
+            username:   fragment("?::text", u.username),
+            avatar_url: u.avatar_url,
+            bio:        u.bio
+          }
+      )
+      case user do
+        nil  -> json_resp(conn, 404, %{error: "User not found"})
+        user ->
+          {_items, total} = NexusGallery.Items.list_items([
+            user_id: user.id, page: 1, per_page: 1
+          ])
+          json_resp(conn, 200, %{user: Map.put(user, :item_count, total)})
+      end
+    end)
+  end
+
+  # -------------------------------------------------------------------------
+  # Subscriptions
+  # -------------------------------------------------------------------------
+
+  get "/subscriptions/check" do
+    require_auth(conn, fn conn ->
+      user         = conn.assigns.current_user
+      subject_type = conn.query_params["subject_type"]
+      subject_id   = conn.query_params["subject_id"]
+
+      if is_nil(subject_type) or is_nil(subject_id) do
+        json_resp(conn, 422, %{error: "subject_type and subject_id are required"})
+      else
+        case Ecto.UUID.dump(subject_id) do
+          {:ok, id_bin} ->
+            subscribed = Nexus.Repo.aggregate(
+              Ecto.Query.from(s in "nexus_gallery_subscriptions",
+                where: s.user_id == ^user.id
+                  and s.subject_type == ^subject_type
+                  and s.subject_id == ^id_bin),
+              :count, :id
+            ) > 0
+            json_resp(conn, 200, %{subscribed: subscribed})
+          :error ->
+            json_resp(conn, 200, %{subscribed: false})
+        end
+      end
+    end)
+  end
+
+  post "/subscriptions" do
+    require_permission(conn, "can_subscribe", fn conn ->
+      user         = conn.assigns.current_user
+      subject_type = conn.body_params["subject_type"]
+      subject_id   = conn.body_params["subject_id"]
+
+      if is_nil(subject_type) or is_nil(subject_id) do
+        json_resp(conn, 422, %{error: "subject_type and subject_id are required"})
+      else
+        case Ecto.UUID.dump(subject_id) do
+          {:ok, id_bin} ->
+            already = Nexus.Repo.aggregate(
+              Ecto.Query.from(s in "nexus_gallery_subscriptions",
+                where: s.user_id == ^user.id
+                  and s.subject_type == ^subject_type
+                  and s.subject_id == ^id_bin),
+              :count, :id
+            ) > 0
+            unless already do
+              {:ok, sub_id_bin} = Ecto.UUID.dump(Ecto.UUID.generate())
+              now = DateTime.utc_now() |> DateTime.truncate(:second)
+              Nexus.Repo.insert_all("nexus_gallery_subscriptions", [%{
+                id:           sub_id_bin,
+                user_id:      user.id,
+                subject_type: subject_type,
+                subject_id:   id_bin,
+                inserted_at:  now,
+                updated_at:   now
+              }])
+            end
+            json_resp(conn, 200, %{subscribed: true})
+          :error ->
+            json_resp(conn, 404, %{error: "Invalid subject_id"})
+        end
+      end
+    end)
+  end
+
+  delete "/subscriptions/:subject_type/:subject_id" do
+    require_auth(conn, fn conn ->
+      user         = conn.assigns.current_user
+      subject_type = conn.params["subject_type"]
+      subject_id   = conn.params["subject_id"]
+      case Ecto.UUID.dump(subject_id) do
+        {:ok, id_bin} ->
+          Nexus.Repo.delete_all(
+            Ecto.Query.from s in "nexus_gallery_subscriptions",
+              where: s.user_id == ^user.id
+                and s.subject_type == ^subject_type
+                and s.subject_id == ^id_bin
+          )
+          json_resp(conn, 200, %{subscribed: false})
+        :error ->
+          json_resp(conn, 404, %{error: "Invalid subject_id"})
+      end
+    end)
+  end
+
   # -------------------------------------------------------------------------
   # Catch-all
   # -------------------------------------------------------------------------
