@@ -103,20 +103,21 @@
             setEntries(function (prev) {
               var u = prev.slice(); u[idx] = Object.assign({}, u[idx], { progress: pct }); return u;
             });
-          });
-        })
-        .then(function (r) {
-          // Save file_url, original_url and upload_id back to the draft item
-          // so the detail page can display the image when it loads.
-          return apiPatch("/items/" + draftId, {
-            file_url:     r.url,
-            original_url: r.original_url,
-            upload_id:    r.upload ? r.upload.id : null,
-          }).then(function () {
-            setEntries(function (prev) {
-              var u = prev.slice();
-              u[idx] = Object.assign({}, u[idx], { status: "done", progress: 100, url: r.url, originalUrl: r.original_url, uploadId: r.upload && r.upload.id });
-              return u;
+          }).then(function (r) {
+            // Save file_url, original_url and upload_id back to the draft item
+            // so the detail page can display the image when it loads.
+            // draftId is in scope here because this .then() is nested inside
+            // the outer .then() where draftId was declared.
+            return apiPatch("/items/" + draftId, {
+              file_url:     r.url,
+              original_url: r.original_url,
+              upload_id:    r.upload ? r.upload.id : null,
+            }).then(function () {
+              setEntries(function (prev) {
+                var u = prev.slice();
+                u[idx] = Object.assign({}, u[idx], { status: "done", progress: 100, url: r.url, originalUrl: r.original_url, uploadId: r.upload && r.upload.id });
+                return u;
+              });
             });
           });
         })
