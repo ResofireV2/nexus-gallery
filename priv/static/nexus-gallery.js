@@ -276,6 +276,88 @@
     );
   }
 
+  // ─── EmbedModal ──────────────────────────────────────────────────────────
+
+  function EmbedModal(props) {
+    var onClose = props.onClose;
+    var _url     = useState(""); var url     = _url[0];     var setUrl     = _url[1];
+    var _error   = useState(""); var error   = _error[0];   var setError   = _error[1];
+    var _saving  = useState(false); var saving = _saving[0]; var setSaving  = _saving[1];
+
+    function extractYouTubeId(input) {
+      var m = input.match(/(?:youtu\.be\/|v=|embed\/)([A-Za-z0-9_-]{11})/);
+      return m ? m[1] : null;
+    }
+
+    function handleSubmit() {
+      var trimmed = url.trim();
+      if (!trimmed) { setError("Please enter a YouTube URL."); return; }
+      var ytId = extractYouTubeId(trimmed);
+      if (!ytId) { setError("Couldn't find a YouTube video ID in that URL."); return; }
+      var embedUrl = "https://www.youtube.com/embed/" + ytId;
+      var thumbUrl = "https://i.ytimg.com/vi/" + ytId + "/mqdefault.jpg";
+      setSaving(true);
+      apiPost("/items/draft", { media_type: "embed" })
+        .then(function (d) {
+          if (!d.id) throw new Error(d.error || "Failed to create draft");
+          return apiPatch("/items/" + d.id, {
+            embed_url:     embedUrl,
+            thumbnail_url: thumbUrl,
+            is_draft:      true
+          }).then(function () { return d.id; });
+        })
+        .then(function (draftId) {
+          onClose();
+          NE.navigate("/ext/" + SLUG + "/new/" + draftId);
+        })
+        .catch(function (err) {
+          setError(err.message || "Failed to submit embed");
+          setSaving(false);
+        });
+    }
+
+    var inputStyle = {
+      width: "100%", padding: "10px 14px",
+      background: "rgba(255,255,255,0.05)", border: "0.5px solid var(--b2)",
+      borderRadius: 10, color: "var(--t1)", fontSize: 14,
+      outline: "none", fontFamily: "inherit"
+    };
+
+    return React.createElement("div", {
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9000 },
+      onClick: function (e) { if (e.target === e.currentTarget && !saving) onClose(); }
+    },
+      React.createElement("div", {
+        style: { background: "var(--s2)", border: "0.5px solid var(--b2)", borderRadius: 14, padding: 24, width: 480, maxWidth: "calc(100vw - 32px)", display: "flex", flexDirection: "column", gap: 16 }
+      },
+        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
+          React.createElement("span", { style: { fontSize: 15, fontWeight: 500, color: "var(--t1)" } }, "Submit embed"),
+          React.createElement("button", { onClick: onClose, disabled: saving, style: { background: "none", border: "none", color: "var(--t4)", cursor: "pointer", fontSize: 18 } },
+            React.createElement("i", { className: "fa-solid fa-xmark" }))
+        ),
+        React.createElement("div", null,
+          React.createElement("label", { style: { fontSize: 12, color: "var(--t4)", fontWeight: 500, display: "block", marginBottom: 6 } }, "YouTube URL"),
+          React.createElement("input", {
+            style: inputStyle,
+            value: url,
+            placeholder: "https://www.youtube.com/watch?v=...",
+            autoFocus: true,
+            onChange: function (e) { setUrl(e.target.value); setError(""); },
+            onKeyDown: function (e) { if (e.key === "Enter") handleSubmit(); }
+          }),
+          error && React.createElement("div", { style: { fontSize: 12, color: "var(--red)", marginTop: 6 } }, error)
+        ),
+        React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } },
+          React.createElement("button", { className: "btn-ghost", style: { fontSize: 13 }, onClick: onClose, disabled: saving }, "Cancel"),
+          React.createElement("button", { className: "btn-primary", style: { fontSize: 13 }, onClick: handleSubmit, disabled: saving },
+            React.createElement("i", { className: "fa-brands fa-youtube", style: { marginRight: 6 } }),
+            saving ? "Submitting…" : "Submit"
+          )
+        )
+      )
+    );
+  }
+
   // ─── Gallery browse page ──────────────────────────────────────────────────
 
   function GalleryPage(props) {
@@ -283,6 +365,7 @@
 
     var _showUpload          = useState(false); var showUpload          = _showUpload[0];          var setShowUpload          = _showUpload[1];
     var _showNewCollection   = useState(false); var showNewCollection   = _showNewCollection[0];   var setShowNewCollection   = _showNewCollection[1];
+    var _showEmbed           = useState(false); var showEmbed           = _showEmbed[0];           var setShowEmbed           = _showEmbed[1];
     var _permissions       = useState({});  var permissions       = _permissions[0];       var setPermissions       = _permissions[1];
     var _gallerySettings   = useState({});  var gallerySettings   = _gallerySettings[0];   var setGallerySettings   = _gallerySettings[1];
     var _items          = useState([]);       var items          = _items[0];          var setItems          = _items[1];
@@ -379,6 +462,9 @@
       showUpload && React.createElement(UploadModal, {
         onClose: function () { setShowUpload(false); },
         onUploaded: function () { setShowUpload(false); },
+      }),
+      showEmbed && React.createElement(EmbedModal, {
+        onClose: function () { setShowEmbed(false); },
       }),
 
       showNewCollection && React.createElement(NewCollectionModal, {
@@ -496,6 +582,14 @@
           },
             React.createElement("i", { className: "fa-solid fa-layer-group", style: { fontSize: 11 } }),
             "New collection"
+          ),
+          permissions.can_submit_embed && gallerySettings.embeds_enabled && React.createElement("button", {
+            className: "btn-ghost",
+            style: { fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, padding: "6px 14px" },
+            onClick: function () { setShowEmbed(true); }
+          },
+            React.createElement("i", { className: "fa-brands fa-youtube", style: { fontSize: 11 } }),
+            "Submit embed"
           )
         ),
 
@@ -2575,9 +2669,9 @@
   NE.registerProfileTab({ slug: SLUG, id: "gallery-uploads", component: GalleryProfileTab });
 
   // gallery_comment registered below with onClick
-  NE.registerNotificationType("gallery_rating",         { icon: "fa-star",        iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " rated your gallery item.")); },                             onClick: function (_ref) { var n = _ref.n; var navigate = _ref.navigate; if (n.data && n.data.item_id) navigate("/ext/" + SLUG + "/" + n.data.item_id); } });
-  NE.registerNotificationType("gallery_new_image",      { icon: "fa-images",      iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " added a new image to a tag you follow.")); },           onClick: function (_ref) { var n = _ref.n; var navigate = _ref.navigate; if (n.data && n.data.item_id) navigate("/ext/" + SLUG + "/" + n.data.item_id); } });
-  NE.registerNotificationType("gallery_collection_item",{ icon: "fa-layer-group",  iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " added a new image to a collection you follow.")); }, onClick: function (_ref) { var n = _ref.n; var navigate = _ref.navigate; if (n.data && n.data.item_id) navigate("/ext/" + SLUG + "/" + n.data.item_id); } });
-  NE.registerNotificationType("gallery_comment",        { icon: "fa-comment",     iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " commented on a gallery item you follow.")); },       onClick: function (_ref) { var n = _ref.n; var navigate = _ref.navigate; if (n.data && n.data.item_id) navigate("/ext/" + SLUG + "/" + n.data.item_id); } });
+  NE.registerNotificationType("gallery_rating",         { icon: "fa-star",        iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " rated your gallery item.")); },                             onClick: function (_ref) { var n = _ref.n; if (n.data && n.data.item_id) NE.navigate("/ext/" + SLUG + "/" + n.data.item_id); } });
+  NE.registerNotificationType("gallery_new_image",      { icon: "fa-images",      iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " added a new image to a tag you follow.")); },           onClick: function (_ref) { var n = _ref.n; if (n.data && n.data.item_id) NE.navigate("/ext/" + SLUG + "/" + n.data.item_id); } });
+  NE.registerNotificationType("gallery_collection_item",{ icon: "fa-layer-group",  iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " added a new image to a collection you follow.")); }, onClick: function (_ref) { var n = _ref.n; if (n.data && n.data.item_id) NE.navigate("/ext/" + SLUG + "/" + n.data.item_id); } });
+  NE.registerNotificationType("gallery_comment",        { icon: "fa-comment",     iconColor: "var(--ac)", renderBody: function (n) { return React.createElement(React.Fragment, null, React.createElement("strong", { style: { color: "var(--t1)" } }, n.actor ? n.actor.username : "Someone"), React.createElement("span", { style: { color: "var(--t3)" } }, " commented on a gallery item you follow.")); },       onClick: function (_ref) { var n = _ref.n; if (n.data && n.data.item_id) NE.navigate("/ext/" + SLUG + "/" + n.data.item_id); } });
 
 })();
