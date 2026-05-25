@@ -542,7 +542,9 @@
     }
 
     var isMobile = useIsMobile();
-    var tabs = ["Images", "Collections", "Videos", "Embeds"];
+    var tabs = ["Images", "Collections"]
+      .concat(gallerySettings.videos_enabled ? ["Videos"] : [])
+      .concat(gallerySettings.embeds_enabled ? ["Embeds"] : []);
     var sorts = [
       { key: "newest",         label: "Newest" },
       { key: "oldest",         label: "Oldest" },
