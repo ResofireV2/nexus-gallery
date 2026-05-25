@@ -195,15 +195,41 @@
           onDragOver: function (e) { e.preventDefault(); }
         },
           React.createElement("i", { className: "fa-solid fa-upload", style: { fontSize: 28, display: "block", marginBottom: 10, color: "var(--t5)" } }),
-          React.createElement("div", null, "Click to select images or drag and drop"),
+          React.createElement("div", null, videosEnabled ? "Click to select files or drag and drop" : "Click to select images or drag and drop"),
           React.createElement("div", { style: { fontSize: 11, color: "var(--t5)", marginTop: 4 } }, "JPEG, PNG, GIF, WebP")
         ),
         entries.length > 0 && React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, overflowY: "auto", maxHeight: 260 } },
           entries.map(function (entry, i) {
-            var clip = entry.status === "done" ? 0 : 100 - entry.progress;
+            var clip    = entry.status === "done" ? 0 : 100 - entry.progress;
+            var isVid   = (entry.file.type || "").startsWith("video/");
+            var progress = Math.round(100 - clip);
             return React.createElement("div", { key: i, style: { position: "relative", aspectRatio: "16/9", borderRadius: 6, overflow: "hidden", background: "var(--s3)" } },
-              React.createElement("img", { src: entry.previewUrl, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "grayscale(1)" } }),
-              React.createElement("img", { src: entry.previewUrl, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", clipPath: "inset(" + clip + "% 0 0 0)", transition: "clip-path 0.1s linear" } }),
+              isVid
+                ? React.createElement("div", {
+                    style: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, background: "var(--s2)" }
+                  },
+                    React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 64 64", width: "36", height: "36" },
+                      React.createElement("rect", { x: "4", y: "10", width: "56", height: "44", rx: "6", fill: "none", stroke: "var(--t5)", strokeWidth: "2.5" }),
+                      React.createElement("polygon", { points: "25,22 25,42 44,32", fill: "var(--t5)" }),
+                      React.createElement("line", { x1: "4", y1: "18", x2: "60", y2: "18", stroke: "var(--t5)", strokeWidth: "2" }),
+                      React.createElement("line", { x1: "4", y1: "46", x2: "60", y2: "46", stroke: "var(--t5)", strokeWidth: "2" }),
+                      React.createElement("line", { x1: "14", y1: "10", x2: "14", y2: "18", stroke: "var(--t5)", strokeWidth: "2" }),
+                      React.createElement("line", { x1: "26", y1: "10", x2: "26", y2: "18", stroke: "var(--t5)", strokeWidth: "2" }),
+                      React.createElement("line", { x1: "38", y1: "10", x2: "38", y2: "18", stroke: "var(--t5)", strokeWidth: "2" }),
+                      React.createElement("line", { x1: "50", y1: "10", x2: "50", y2: "18", stroke: "var(--t5)", strokeWidth: "2" }),
+                      React.createElement("line", { x1: "14", y1: "46", x2: "14", y2: "54", stroke: "var(--t5)", strokeWidth: "2" }),
+                      React.createElement("line", { x1: "26", y1: "46", x2: "26", y2: "54", stroke: "var(--t5)", strokeWidth: "2" }),
+                      React.createElement("line", { x1: "38", y1: "46", x2: "38", y2: "54", stroke: "var(--t5)", strokeWidth: "2" }),
+                      React.createElement("line", { x1: "50", y1: "46", x2: "50", y2: "54", stroke: "var(--t5)", strokeWidth: "2" })
+                    ),
+                    entry.status !== "done" && React.createElement("div", {
+                      style: { fontSize: 10, color: "var(--t5)", fontFamily: "inherit" }
+                    }, entry.status === "pending" ? "Pending…" : progress + "%")
+                  )
+                : React.createElement(React.Fragment, null,
+                    React.createElement("img", { src: entry.previewUrl, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "grayscale(1)" } }),
+                    React.createElement("img", { src: entry.previewUrl, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", clipPath: "inset(" + clip + "% 0 0 0)", transition: "clip-path 0.1s linear" } })
+                  ),
               entry.status === "error" && React.createElement("div", { style: { position: "absolute", inset: 0, background: "rgba(248,113,113,0.7)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#fff", padding: 4, textAlign: "center" } }, entry.error || "Failed")
             );
           }),
