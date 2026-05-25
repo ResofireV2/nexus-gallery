@@ -472,11 +472,23 @@ defmodule NexusGallery.ApiRouter do
                     select: i.user_id
                 )
                 if item_owner_id && item_owner_id != user.id do
-                  Nexus.Notifications.notify_extension(@slug, "gallery_rating",
-                    user_id:  item_owner_id,
-                    actor_id: user.id,
-                    data:     %{"item_id" => item_id_str, "value" => value}
-                  )
+                  # Only notify if no existing unread extension notification for this item
+                  already_notified_rating =
+                    Nexus.Repo.aggregate(
+                      Ecto.Query.from(n in "notifications",
+                        where: n.user_id == ^item_owner_id
+                          and n.type == "extension"
+                          and n.read == false
+                          and fragment("(?->>'item_id') = ?", n.data, ^item_id_str)),
+                      :count
+                    ) > 0
+                  unless already_notified_rating do
+                    Nexus.Notifications.notify_extension(@slug, "gallery_rating",
+                      user_id:  item_owner_id,
+                      actor_id: user.id,
+                      data:     %{"item_id" => item_id_str, "value" => value}
+                    )
+                  end
                 end
               end)
               stats = rating_stats(id_bin, "item")
@@ -744,12 +756,26 @@ defmodule NexusGallery.ApiRouter do
                   |> Enum.reject(&is_nil/1)
                   |> Enum.reject(&(&1 == user.id))
                   |> Enum.uniq()
+                # Only notify users who have no existing unread extension notification
+                # for this item — one notification per item per user.
+                {:ok, item_id_bin_check} = Ecto.UUID.dump(item_id_str)
+                already_notified =
+                  Nexus.Repo.all(
+                    Ecto.Query.from n in "notifications",
+                      where: n.user_id in ^notify_ids
+                        and n.type == "extension"
+                        and n.read == false
+                        and fragment("(?->>'item_id') = ?", n.data, ^item_id_str),
+                      select: n.user_id
+                  ) |> MapSet.new()
                 Enum.each(notify_ids, fn target_id ->
-                  Nexus.Notifications.notify_extension(@slug, "gallery_comment",
-                    user_id:  target_id,
-                    actor_id: user.id,
-                    data:     %{"item_id" => item_id_str, "body_preview" => String.slice(String.trim(body), 0, 80)}
-                  )
+                  unless MapSet.member?(already_notified, target_id) do
+                    Nexus.Notifications.notify_extension(@slug, "gallery_comment",
+                      user_id:  target_id,
+                      actor_id: user.id,
+                      data:     %{"item_id" => item_id_str, "body_preview" => String.slice(String.trim(body), 0, 80)}
+                    )
+                  end
                 end)
               end)
               json_resp(conn, 201, %{comment: %{
@@ -1166,6 +1192,7 @@ defmodule NexusGallery.ApiRouter do
             select: %{
               type:       "comment",
               subject_id: fragment("?::text", c.subject_id),
+              item_id:    fragment("?::text", c.subject_id),
               actor_id:   c.user_id,
               body:       c.body,
               occurred_at: c.inserted_at
