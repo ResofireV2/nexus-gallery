@@ -93,8 +93,12 @@ defmodule NexusGallery.Items do
 
   @doc "Deletes an item and its tag associations."
   def delete_item(%Item{} = item) do
+    id_str = uuid_str(item.id)
     Repo.transaction(fn ->
-      Repo.delete_all(from it in "nexus_gallery_item_tags", where: it.item_id == ^item.id)
+      Repo.delete_all(
+        from it in "nexus_gallery_item_tags",
+          where: fragment("? = ?::uuid", it.item_id, type(^id_str, :string))
+      )
       Repo.delete!(item)
     end)
     |> case do
@@ -179,17 +183,19 @@ defmodule NexusGallery.Items do
 
   # Fetch tags for an item.
   defp fetch_tags(item_id) do
+    # Normalize to string UUID regardless of whether we received a binary or string
+    id_str = uuid_str(item_id)
     tag_ids =
       from(it in "nexus_gallery_item_tags",
-        where: fragment("? = ?::uuid", it.item_id, type(^item_id, :string)),
-        select: type(it.tag_id, :binary_id))
+        where: fragment("? = ?::uuid", it.item_id, type(^id_str, :string)),
+        select: fragment("?::text", it.tag_id))
       |> Repo.all()
 
     if tag_ids == [] do
       []
     else
       from(t in NexusGallery.Tag,
-        where: t.id in ^tag_ids,
+        where: fragment("?::text", t.id) in ^tag_ids,
         order_by: t.position)
       |> Repo.all()
       |> Enum.map(&tag_to_map/1)
@@ -280,8 +286,14 @@ defmodule NexusGallery.Items do
   end
 
   defp set_tags(item_id, tag_ids) do
-    Repo.delete_all(from it in "nexus_gallery_item_tags", where: it.item_id == ^item_id)
-    rows = Enum.map(tag_ids, fn tag_id -> %{item_id: item_id, tag_id: tag_id} end)
+    id_str = uuid_str(item_id)
+    Repo.delete_all(
+      from it in "nexus_gallery_item_tags",
+        where: fragment("? = ?::uuid", it.item_id, type(^id_str, :string))
+    )
+    rows = Enum.map(tag_ids, fn tag_id ->
+      %{item_id: id_str, tag_id: tag_id}
+    end)
     if rows != [], do: Repo.insert_all("nexus_gallery_item_tags", rows, on_conflict: :nothing)
   end
 end

@@ -9,9 +9,9 @@ defmodule NexusGallery.Tags do
     |> Repo.all()
   end
 
-  @doc "Returns a single tag by id, or nil."
+  @doc "Returns a single tag by id (string UUID), or nil."
   def get_tag(id) do
-    Repo.get(Tag, id)
+    Repo.one(from t in Tag, where: fragment("? = ?::uuid", t.id, type(^id, :string)))
   end
 
   @doc "Returns a single tag by slug, or nil."
@@ -48,12 +48,12 @@ defmodule NexusGallery.Tags do
       ordered_ids
       |> Enum.with_index()
       |> Enum.each(fn {id, index} ->
-        from(t in Tag, where: t.id == ^id)
+        from(t in Tag, where: fragment("? = ?::uuid", t.id, type(^id, :string)))
         |> Repo.update_all(set: [position: index])
       end)
     end)
     |> case do
-      {:ok, _}        -> :ok
+      {:ok, _}         -> :ok
       {:error, reason} -> {:error, reason}
     end
   end
