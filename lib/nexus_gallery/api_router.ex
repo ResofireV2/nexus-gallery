@@ -329,8 +329,8 @@ defmodule NexusGallery.ApiRouter do
     to_string(user.id) == to_string(item.user_id) || user.role in ["admin", "moderator"]
   end
 
-  defp can_feature?(_item \\ nil, nil), do: false
-  defp can_feature?(_item \\ nil, user), do: user.role in ["admin", "moderator"]
+  defp can_feature?(nil),  do: false
+  defp can_feature?(user), do: user.role in ["admin", "moderator"]
 
   defp tag_json(tag) do
     %{
