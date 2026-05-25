@@ -153,7 +153,7 @@
     }
 
     return React.createElement("div", {
-      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9000 },
+      style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9000 },
       onClick: function (e) { if (e.target === e.currentTarget && !anyUploading) onClose(); }
     },
       React.createElement("div", {
