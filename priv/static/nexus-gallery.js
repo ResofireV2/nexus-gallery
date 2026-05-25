@@ -539,6 +539,113 @@
     );
   }
 
+  // ─── Star rating component ────────────────────────────────────────────────
+
+  function StarRating(props) {
+    var value    = props.value;      // current user rating 1-5 or null
+    var avg      = props.avg;        // float or null
+    var count    = props.count || 0;
+    var onRate   = props.onRate;     // function(value) — null if readonly
+    var _hover   = useState(0); var hover = _hover[0]; var setHover = _hover[1];
+
+    var stars = [1, 2, 3, 4, 5];
+    var display = hover || value || 0;
+    var canRate = typeof onRate === "function";
+
+    return React.createElement("div", {
+      style: { display: "flex", alignItems: "center", gap: 6 }
+    },
+      // Stars
+      React.createElement("div", {
+        style: { display: "flex", gap: 2 },
+        onMouseLeave: canRate ? function () { setHover(0); } : null,
+      },
+        stars.map(function (n) {
+          var filled = n <= display;
+          return React.createElement("i", {
+            key: n,
+            className: filled ? "fa-solid fa-star" : "fa-regular fa-star",
+            style: {
+              fontSize: 16,
+              color: filled ? "#fbbf24" : "var(--t5)",
+              cursor: canRate ? "pointer" : "default",
+              transition: "color 0.1s",
+            },
+            onMouseEnter: canRate ? function () { setHover(n); } : null,
+            onClick: canRate ? function () {
+              // Clicking the current value clears the rating
+              onRate(n === value ? null : n);
+            } : null,
+          });
+        })
+      ),
+      // Stats
+      avg != null && React.createElement("span", {
+        style: { fontSize: 12.5, color: "var(--t4)" }
+      },
+        avg.toFixed(1) + " (" + count + ")"
+      ),
+      count === 0 && avg == null && React.createElement("span", {
+        style: { fontSize: 12.5, color: "var(--t5)" }
+      }, canRate ? "Be the first to rate" : "No ratings yet")
+    );
+  }
+
+  // ─── Reaction strip ───────────────────────────────────────────────────────
+
+  var REACTIONS = [
+    { emoji: "\u2764\ufe0f", icon: "fa-solid fa-heart",         color: "#f87171" },
+    { emoji: "\ud83d\udc4d", icon: "fa-solid fa-thumbs-up",     color: "#60a5fa" },
+    { emoji: "\ud83d\ude02", icon: "fa-solid fa-face-laugh",    color: "#fbbf24" },
+    { emoji: "\ud83d\ude2e", icon: "fa-solid fa-face-surprise", color: "#a78bfa" },
+    { emoji: "\ud83d\udd25", icon: "fa-solid fa-fire",          color: "#fb923c" },
+    { emoji: "\ud83d\udc4f", icon: "fa-solid fa-hands-clapping", color: "#34d399" },
+  ];
+
+  function ReactionStrip(props) {
+    var counts  = props.counts || {};
+    var mine    = props.mine   || [];
+    var onReact = props.onReact; // function(emoji) — null if readonly
+    var canReact = typeof onReact === "function";
+
+    return React.createElement("div", {
+      style: { display: "flex", flexWrap: "wrap", gap: 6 }
+    },
+      REACTIONS.map(function (r) {
+        var count  = counts[r.emoji] || 0;
+        var active = mine.indexOf(r.emoji) >= 0;
+        return React.createElement("button", {
+          key: r.emoji,
+          onClick: canReact ? function () { onReact(r.emoji); } : null,
+          disabled: !canReact,
+          style: {
+            display:     "inline-flex",
+            alignItems:  "center",
+            gap:         5,
+            padding:     "4px 10px",
+            borderRadius: 20,
+            border:      "0.5px solid " + (active ? r.color + "88" : "var(--b2)"),
+            background:  active ? r.color + "18" : "transparent",
+            color:       active ? r.color : "var(--t4)",
+            fontSize:    13,
+            cursor:      canReact ? "pointer" : "default",
+            fontFamily:  "inherit",
+            transition:  "all 0.1s",
+          }
+        },
+          React.createElement("i", {
+            className: r.icon,
+            style: { fontSize: 13, color: active ? r.color : "var(--t5)" }
+          }),
+          count > 0 && React.createElement("span", {
+            style: { fontSize: 12, fontWeight: active ? 500 : 400 }
+          }, count)
+        );
+      })
+    );
+  }
+
+
   // ─── YouTube ID extractor ─────────────────────────────────────────────────
 
   function extractYouTubeId(url) {
@@ -560,11 +667,19 @@
     var _saving   = useState(false); var saving   = _saving[0];   var setSaving   = _saving[1];
     var _form     = useState({ title: "", description: "", tag_ids: [] });
     var form = _form[0]; var setForm = _form[1];
+    var _rating   = useState({ my_rating: null, avg: null, count: 0 });
+    var rating    = _rating[0];    var setRating   = _rating[1];
+    var _reactions = useState({ counts: {}, mine: [] });
+    var reactions  = _reactions[0]; var setReactions = _reactions[1];
+    var _perms    = useState({});   var perms      = _perms[0];    var setPerms    = _perms[1];
 
     useEffect(function () {
       Promise.all([
         apiGet("/items/" + uuid),
         apiGet("/tags/public"),
+        apiGet("/items/" + uuid + "/ratings"),
+        apiGet("/items/" + uuid + "/reactions"),
+        apiGet("/permissions"),
       ]).then(function (results) {
         if (results[0].item) {
           var i = results[0].item;
@@ -576,6 +691,9 @@
           });
         }
         if (results[1].tags) setAllTags(results[1].tags);
+        if (results[2] && typeof results[2].count === "number") setRating(results[2]);
+        if (results[3] && results[3].counts) setReactions(results[3]);
+        if (results[4] && results[4].permissions) setPerms(results[4]);
         setLoading(false);
       }).catch(function () { setLoading(false); });
     }, [uuid]);
@@ -621,6 +739,30 @@
           }
         })
         .catch(function () { toast("Delete failed", "err"); });
+    }
+
+    function handleRate(value) {
+      if (value === null) {
+        apiDelete("/items/" + uuid + "/ratings")
+          .then(function (d) {
+            if (typeof d.count === "number") setRating(d);
+          })
+          .catch(function () { toast("Failed to remove rating", "err"); });
+      } else {
+        apiPost("/items/" + uuid + "/ratings", { value: value })
+          .then(function (d) {
+            if (typeof d.count === "number") setRating(d);
+          })
+          .catch(function () { toast("Failed to rate", "err"); });
+      }
+    }
+
+    function handleReact(emoji) {
+      apiPost("/items/" + uuid + "/reactions", { emoji: emoji })
+        .then(function (d) {
+          if (d.counts) setReactions(d);
+        })
+        .catch(function () { toast("Failed to react", "err"); });
     }
 
     function handleOpenLightbox() {
@@ -826,6 +968,30 @@
         React.createElement("div", { style: { marginBottom: 16 } },
           React.createElement(Md, { text: item.description })
         ),
+
+
+      // ── Ratings and reactions ────────────────────────────
+
+      !editing && (perms.ratings_enabled !== false) && React.createElement("div", {
+        style: { marginBottom: 16 }
+      },
+        React.createElement(StarRating, {
+          value:  rating.my_rating,
+          avg:    rating.avg,
+          count:  rating.count,
+          onRate: perms.permissions && perms.permissions.can_rate ? handleRate : null,
+        })
+      ),
+
+      !editing && (perms.reactions_enabled !== false) && React.createElement("div", {
+        style: { marginBottom: 20 }
+      },
+        React.createElement(ReactionStrip, {
+          counts:  reactions.counts,
+          mine:    reactions.mine,
+          onReact: perms.permissions && perms.permissions.can_react ? handleReact : null,
+        })
+      ),
 
       // ── Edit form (inline) ─────────────────────────────────────────────────
 

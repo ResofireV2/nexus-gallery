@@ -88,9 +88,11 @@ defmodule NexusGallery.ApiRouter do
     end)
     s = settings()
     json_resp(conn, 200, %{
-      permissions:    resolved,
-      videos_enabled: s["videos_enabled"] == true,
-      embeds_enabled: s["embeds_enabled"] != false
+      permissions:       resolved,
+      videos_enabled:    s["videos_enabled"] == true,
+      embeds_enabled:    s["embeds_enabled"] != false,
+      ratings_enabled:   s["ratings_enabled"] != false,
+      reactions_enabled: s["reactions_enabled"] != false
     })
   end
 
@@ -352,6 +354,187 @@ defmodule NexusGallery.ApiRouter do
   # Stats and widgets (Phase 4)
   # -------------------------------------------------------------------------
 
+
+  # -------------------------------------------------------------------------
+  # Ratings
+  # -------------------------------------------------------------------------
+
+  get "/items/:id/ratings" do
+    require_permission(conn, "can_view_gallery", fn conn ->
+      user = conn.assigns[:current_user]
+      item_id_str = conn.params["id"]
+      case Ecto.UUID.dump(item_id_str) do
+        {:ok, id_bin} ->
+          stats = rating_stats(id_bin, "item")
+          my_rating =
+            if user do
+              case Nexus.Repo.one(
+                Ecto.Query.from r in "nexus_gallery_ratings",
+                  where: r.user_id == ^user.id
+                    and r.subject_type == "item"
+                    and fragment("? = ?::uuid", r.subject_id, type(^item_id_str, :string)),
+                  select: r.value
+              ) do
+                nil -> nil
+                v   -> v
+              end
+            end
+          json_resp(conn, 200, Map.put(stats, :my_rating, my_rating))
+        :error ->
+          json_resp(conn, 404, %{error: "Item not found"})
+      end
+    end)
+  end
+
+  post "/items/:id/ratings" do
+    require_permission(conn, "can_rate", fn conn ->
+      user = conn.assigns.current_user
+      item_id_str = conn.params["id"]
+      value = parse_int(conn.body_params["value"], nil)
+
+      cond do
+        is_nil(value) or value < 1 or value > 5 ->
+          json_resp(conn, 422, %{error: "value must be an integer between 1 and 5"})
+        true ->
+          case Ecto.UUID.dump(item_id_str) do
+            {:ok, id_bin} ->
+              # Delete existing rating from this user for this item
+              Nexus.Repo.delete_all(
+                Ecto.Query.from r in "nexus_gallery_ratings",
+                  where: r.user_id == ^user.id
+                    and r.subject_type == "item"
+                    and r.subject_id == ^id_bin
+              )
+              # Insert new rating
+              {:ok, rating_id_bin} = Ecto.UUID.dump(Ecto.UUID.generate())
+              now = DateTime.utc_now() |> DateTime.truncate(:second)
+              Nexus.Repo.insert_all("nexus_gallery_ratings", [%{
+                id:           rating_id_bin,
+                user_id:      user.id,
+                subject_type: "item",
+                subject_id:   id_bin,
+                value:        value,
+                inserted_at:  now,
+                updated_at:   now
+              }])
+              stats = rating_stats(id_bin, "item")
+              json_resp(conn, 200, Map.put(stats, :my_rating, value))
+            :error ->
+              json_resp(conn, 404, %{error: "Item not found"})
+          end
+      end
+    end)
+  end
+
+  delete "/items/:id/ratings" do
+    require_permission(conn, "can_rate", fn conn ->
+      user = conn.assigns.current_user
+      item_id_str = conn.params["id"]
+      case Ecto.UUID.dump(item_id_str) do
+        {:ok, id_bin} ->
+          Nexus.Repo.delete_all(
+            Ecto.Query.from r in "nexus_gallery_ratings",
+              where: r.user_id == ^user.id
+                and r.subject_type == "item"
+                and r.subject_id == ^id_bin
+          )
+          stats = rating_stats(id_bin, "item")
+          json_resp(conn, 200, Map.put(stats, :my_rating, nil))
+        :error ->
+          json_resp(conn, 404, %{error: "Item not found"})
+      end
+    end)
+  end
+
+  # -------------------------------------------------------------------------
+  # Reactions
+  # -------------------------------------------------------------------------
+
+  get "/items/:id/reactions" do
+    require_permission(conn, "can_view_gallery", fn conn ->
+      user = conn.assigns[:current_user]
+      item_id_str = conn.params["id"]
+      case Ecto.UUID.dump(item_id_str) do
+        {:ok, id_bin} ->
+          counts = reaction_counts(id_bin, "item")
+          mine =
+            if user do
+              Nexus.Repo.all(
+                Ecto.Query.from r in "nexus_gallery_reactions",
+                  where: r.user_id == ^user.id
+                    and r.subject_type == "item"
+                    and r.subject_id == ^id_bin,
+                  select: r.emoji
+              )
+            else
+              []
+            end
+          json_resp(conn, 200, %{counts: counts, mine: mine})
+        :error ->
+          json_resp(conn, 404, %{error: "Item not found"})
+      end
+    end)
+  end
+
+  post "/items/:id/reactions" do
+    require_permission(conn, "can_react", fn conn ->
+      user = conn.assigns.current_user
+      item_id_str = conn.params["id"]
+      emoji = conn.body_params["emoji"]
+
+      if is_nil(emoji) or emoji == "" do
+        json_resp(conn, 422, %{error: "emoji is required"})
+      else
+        case Ecto.UUID.dump(item_id_str) do
+          {:ok, id_bin} ->
+            existing = Nexus.Repo.one(
+              Ecto.Query.from r in "nexus_gallery_reactions",
+                where: r.user_id == ^user.id
+                  and r.subject_type == "item"
+                  and r.subject_id == ^id_bin
+                  and r.emoji == ^emoji,
+                select: r.id
+            )
+            if existing do
+              # Toggle off
+              Nexus.Repo.delete_all(
+                Ecto.Query.from r in "nexus_gallery_reactions",
+                  where: r.user_id == ^user.id
+                    and r.subject_type == "item"
+                    and r.subject_id == ^id_bin
+                    and r.emoji == ^emoji
+              )
+            else
+              # Toggle on
+              {:ok, reaction_id_bin} = Ecto.UUID.dump(Ecto.UUID.generate())
+              now = DateTime.utc_now() |> DateTime.truncate(:second)
+              Nexus.Repo.insert_all("nexus_gallery_reactions", [%{
+                id:           reaction_id_bin,
+                user_id:      user.id,
+                subject_type: "item",
+                subject_id:   id_bin,
+                emoji:        emoji,
+                inserted_at:  now,
+                updated_at:   now
+              }])
+            end
+            counts = reaction_counts(id_bin, "item")
+            mine =
+              Nexus.Repo.all(
+                Ecto.Query.from r in "nexus_gallery_reactions",
+                  where: r.user_id == ^user.id
+                    and r.subject_type == "item"
+                    and r.subject_id == ^id_bin,
+                  select: r.emoji
+              )
+            json_resp(conn, 200, %{counts: counts, mine: mine})
+          :error ->
+            json_resp(conn, 404, %{error: "Item not found"})
+        end
+      end
+    end)
+  end
+
   get "/stats" do
     require_permission(conn, "can_view_gallery", fn conn ->
       json_resp(conn, 200, Items.stats())
@@ -478,6 +661,29 @@ defmodule NexusGallery.ApiRouter do
 
   # Convert a 16-byte binary UUID to string form for JSON encoding.
   # Ecto stores :binary_id fields as raw binaries — Jason cannot encode them.
+
+  defp rating_stats(subject_id_bin, subject_type) do
+    result = Nexus.Repo.one(
+      from r in "nexus_gallery_ratings",
+        where: r.subject_type == ^subject_type and r.subject_id == ^subject_id_bin,
+        select: %{count: count(r.id), avg: avg(r.value)}
+    )
+    count = result[:count] || 0
+    avg   = result[:avg]
+    avg_f = if avg, do: Float.round(avg / 1.0, 1), else: nil
+    %{count: count, avg: avg_f}
+  end
+
+  defp reaction_counts(subject_id_bin, subject_type) do
+    rows = Nexus.Repo.all(
+      from r in "nexus_gallery_reactions",
+        where: r.subject_type == ^subject_type and r.subject_id == ^subject_id_bin,
+        group_by: r.emoji,
+        select: {r.emoji, count(r.id)}
+    )
+    Map.new(rows, fn {emoji, count} -> {emoji, count} end)
+  end
+
   defp uuid_str(nil), do: nil
   defp uuid_str(bin) when is_binary(bin) and byte_size(bin) == 16 do
     case Ecto.UUID.load(bin) do
