@@ -14,18 +14,20 @@ defmodule NexusGallery.Tags do
 
   @doc "Returns all tags ordered by position ascending."
   def list_tags do
-    count_q = Ecto.Query.from(it in "nexus_gallery_item_tags",
-      join: i in NexusGallery.Item, on: i.id == it.item_id,
-      where: i.is_draft == false,
-      group_by: it.tag_id,
-      select: %{tag_id: it.tag_id, count: count(it.item_id)}
-    )
-    from(t in Tag,
-      left_join: c in subquery(count_q), on: c.tag_id == t.id,
-      order_by: [asc: t.position, asc: t.inserted_at],
-      select: %{t | item_count: Ecto.Query.coalesce(c.count, 0)}
-    )
-    |> Repo.all()
+    tags = from(t in Tag, order_by: [asc: t.position, asc: t.inserted_at])
+           |> Repo.all()
+
+    counts =
+      Repo.all(
+        from it in "nexus_gallery_item_tags",
+          join: i in NexusGallery.Item, on: i.id == it.item_id,
+          where: i.is_draft == false,
+          group_by: it.tag_id,
+          select: {fragment("?::text", it.tag_id), count(it.item_id)}
+      )
+      |> Enum.into(%{})
+
+    Enum.map(tags, fn t -> %{t | item_count: Map.get(counts, t.id, 0)} end)
   end
 
   @doc "Returns a single tag by id (string UUID), or nil."
