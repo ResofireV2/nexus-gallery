@@ -133,18 +133,32 @@ defmodule NexusGallery.Items do
   end
 
   def top_rated(limit \\ 4) do
-    ratings_q = Ecto.Query.from(r in "nexus_gallery_ratings",
-      where: r.subject_type == "item",
-      group_by: r.subject_id,
-      select: %{subject_id: r.subject_id, avg: Ecto.Query.fragment("avg(?)", r.value)}
-    )
+    # Fetch avg rating per item from the ratings table
+    avgs =
+      Repo.all(
+        from r in "nexus_gallery_ratings",
+          where: r.subject_type == "item",
+          group_by: r.subject_id,
+          select: {fragment("?::text", r.subject_id), fragment("AVG(?::numeric)", r.value)}
+      )
+      |> Enum.into(%{}, fn {id, avg} ->
+        avg_f = case avg do
+          nil -> 0.0
+          %Decimal{} = d -> Decimal.to_float(d)
+          f -> f / 1.0
+        end
+        {id, avg_f}
+      end)
+
+    # Fetch items, sort by avg rating descending
     from(i in Item,
-      left_join: r in subquery(ratings_q), on: r.subject_id == i.id,
       where: i.is_draft == false,
-      order_by: [desc: Ecto.Query.coalesce(r.avg, 0.0), desc: i.inserted_at],
-      limit: ^limit)
+      order_by: [desc: i.inserted_at],
+      limit: ^(limit * 5))
     |> Repo.all()
     |> enrich_list()
+    |> Enum.sort_by(fn i -> Map.get(avgs, i.id, 0.0) end, :desc)
+    |> Enum.take(limit)
   end
 
   def top_uploaders(limit \\ 4) do
