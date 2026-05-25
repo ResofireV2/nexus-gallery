@@ -308,7 +308,7 @@ defmodule NexusGallery.ApiRouter do
               {:ok, updated} ->
                 # If item just got published, notify tag subscribers (async)
                 if item.is_draft == true and updated.is_draft == false do
-                  item_id_str_for_notif = item_id_str
+                  item_id_str_for_notif = conn.params["id"]
                   actor = user
                   Task.start(fn ->
                     {:ok, item_id_bin_notif} = Ecto.UUID.dump(item_id_str_for_notif)
