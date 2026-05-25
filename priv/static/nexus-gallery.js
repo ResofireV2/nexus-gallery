@@ -270,7 +270,8 @@
   function GalleryPage(props) {
     var currentUser = props.currentUser;
 
-    var _showUpload     = useState(false);    var showUpload     = _showUpload[0];     var setShowUpload     = _showUpload[1];
+    var _showUpload          = useState(false); var showUpload          = _showUpload[0];          var setShowUpload          = _showUpload[1];
+    var _showNewCollection   = useState(false); var showNewCollection   = _showNewCollection[0];   var setShowNewCollection   = _showNewCollection[1];
     var _permissions    = useState({});       var permissions    = _permissions[0];    var setPermissions    = _permissions[1];
     var _items          = useState([]);       var items          = _items[0];          var setItems          = _items[1];
     var _tags           = useState([]);       var tags           = _tags[0];           var setTags           = _tags[1];
@@ -288,18 +289,28 @@
 
     function loadItems(p, s, tag, tab, q) {
       setLoading(true);
-      var mediaType = TAB_TYPE_MAP[tab];
-      var qs = "?page=" + (p || 1) + "&sort=" + (s || "newest");
-      if (tag)       qs += "&tag=" + encodeURIComponent(tag);
-      if (mediaType) qs += "&type=" + mediaType;
-      if (q)         qs += "&search=" + encodeURIComponent(q);
-
-      apiGet("/items" + qs).then(function (d) {
-        setItems(d.items || []);
-        setTotal(d.total || 0);
-        setTotalPages(d.total_pages || 1);
-        setLoading(false);
-      }).catch(function () { setLoading(false); });
+      if (tab === "Collections") {
+        var qs = "?page=" + (p || 1) + "&sort=" + (s || "newest");
+        if (q) qs += "&search=" + encodeURIComponent(q);
+        apiGet("/collections" + qs).then(function (d) {
+          setItems(d.collections || []);
+          setTotal(d.total || 0);
+          setTotalPages(d.total_pages || 1);
+          setLoading(false);
+        }).catch(function () { setLoading(false); });
+      } else {
+        var mediaType = TAB_TYPE_MAP[tab];
+        var qs = "?page=" + (p || 1) + "&sort=" + (s || "newest");
+        if (tag)       qs += "&tag=" + encodeURIComponent(tag);
+        if (mediaType) qs += "&type=" + mediaType;
+        if (q)         qs += "&search=" + encodeURIComponent(q);
+        apiGet("/items" + qs).then(function (d) {
+          setItems(d.items || []);
+          setTotal(d.total || 0);
+          setTotalPages(d.total_pages || 1);
+          setLoading(false);
+        }).catch(function () { setLoading(false); });
+      }
     }
 
     useEffect(function () {
@@ -353,6 +364,14 @@
       showUpload && React.createElement(UploadModal, {
         onClose: function () { setShowUpload(false); },
         onUploaded: function () { setShowUpload(false); },
+      }),
+
+      showNewCollection && React.createElement(NewCollectionModal, {
+        onClose: function () { setShowNewCollection(false); },
+        onCreated: function (coll) {
+          setShowNewCollection(false);
+          NE.navigate("/ext/" + SLUG + "/collection/" + coll.slug);
+        },
       }),
 
       // Tab bar
@@ -413,7 +432,7 @@
         permissions.can_create_collection && React.createElement("button", {
           className: "btn-ghost",
           style: { fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, padding: "6px 14px" },
-          onClick: function () { toast("Collections coming in Phase 8", "warn"); }
+          onClick: function () { setShowNewCollection(true); }
         },
           React.createElement("i", { className: "fa-solid fa-layer-group", style: { fontSize: 11 } }),
           "New collection"
@@ -426,13 +445,17 @@
             React.createElement("i", { className: "fa-solid fa-spinner fa-spin" }))
         : items.length === 0
           ? React.createElement("div", { style: { padding: "48px 0", textAlign: "center", color: "var(--t5)", fontSize: 13 } },
-              React.createElement("i", { className: "fa-solid fa-images", style: { fontSize: 32, display: "block", marginBottom: 12 } }),
-              "No items found."
+              React.createElement("i", { className: activeTab === "Collections" ? "fa-solid fa-layer-group" : "fa-solid fa-images", style: { fontSize: 32, display: "block", marginBottom: 12 } }),
+              activeTab === "Collections" ? "No collections yet." : "No items found."
             )
           : React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, paddingTop: 12 } },
-              items.map(function (item) {
-                return React.createElement(GalleryCard, { key: item.id, item: item, navigate: NE.navigate });
-              })
+              activeTab === "Collections"
+              ? items.map(function (coll) {
+                  return React.createElement(CollectionCard, { key: coll.id, collection: coll });
+                })
+              : items.map(function (item) {
+                  return React.createElement(GalleryCard, { key: item.id, item: item, navigate: NE.navigate });
+                })
             ),
 
       // Pagination
@@ -528,6 +551,239 @@
       )
     );
   }
+
+  // ─── CollectionCard ───────────────────────────────────────────────────────
+
+  function CollectionCard(props) {
+    var coll = props.collection;
+    return React.createElement("div", {
+      onClick: function () { NE.navigate("/ext/" + SLUG + "/collection/" + coll.slug); },
+      style: {
+        borderRadius: 10, overflow: "hidden", cursor: "pointer",
+        background: "var(--s2)", border: "0.5px solid var(--b1)",
+        transition: "border-color 0.15s",
+      }
+    },
+      // Cover / placeholder
+      React.createElement("div", {
+        style: {
+          position: "relative", aspectRatio: "16/9",
+          background: coll.cover_url ? "var(--s3)" : "linear-gradient(135deg,var(--s3),var(--s2))",
+          overflow: "hidden",
+        }
+      },
+        coll.cover_url && React.createElement("img", {
+          src: coll.cover_url, alt: coll.title,
+          style: { width: "100%", height: "100%", objectFit: "cover" }
+        }),
+        !coll.cover_url && React.createElement("div", {
+          style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }
+        },
+          React.createElement("i", { className: "fa-solid fa-layer-group", style: { fontSize: 28, color: "var(--t5)" } })
+        ),
+        React.createElement("div", {
+          style: {
+            position: "absolute", bottom: 6, right: 8,
+            background: "rgba(0,0,0,0.55)", borderRadius: 6,
+            padding: "2px 8px", fontSize: 11.5, color: "#fff"
+          }
+        }, coll.item_count + " items")
+      ),
+      // Footer
+      React.createElement("div", { style: { padding: "10px 12px" } },
+        React.createElement("div", { style: { fontSize: 14, fontWeight: 500, color: "var(--t1)", marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, coll.title),
+        coll.user && React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
+          React.createElement(Av, { user: coll.user, size: 18 }),
+          React.createElement("span", { style: { fontSize: 12, color: "var(--t4)" } }, coll.user.username)
+        )
+      )
+    );
+  }
+
+  // ─── NewCollectionModal ───────────────────────────────────────────────────
+
+  function NewCollectionModal(props) {
+    var onClose   = props.onClose;
+    var onCreated = props.onCreated;
+    var _title    = useState(""); var title    = _title[0]; var setTitle    = _title[1];
+    var _desc     = useState(""); var desc     = _desc[0];  var setDesc     = _desc[1];
+    var _saving   = useState(false); var saving = _saving[0]; var setSaving = _saving[1];
+
+    function handleCreate() {
+      if (!title.trim()) return;
+      setSaving(true);
+      apiPost("/collections", { title: title.trim(), description: desc.trim() || null })
+        .then(function (d) {
+          if (d.collection) {
+            onCreated(d.collection);
+          } else {
+            toast(d.error || (d.errors && JSON.stringify(d.errors)) || "Failed to create", "err");
+          }
+        })
+        .catch(function () { toast("Failed to create collection", "err"); })
+        .finally(function () { setSaving(false); });
+    }
+
+    return React.createElement("div", {
+      style: {
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16,
+      },
+      onClick: function (e) { if (e.target === e.currentTarget) onClose(); }
+    },
+      React.createElement("div", {
+        style: {
+          background: "var(--s1)", borderRadius: 14, padding: 24,
+          width: "100%", maxWidth: 440, border: "0.5px solid var(--b2)",
+        }
+      },
+        React.createElement("div", {
+          style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }
+        },
+          React.createElement("span", { style: { fontSize: 16, fontWeight: 600, color: "var(--t1)" } }, "New collection"),
+          React.createElement("button", {
+            onClick: onClose,
+            style: { background: "none", border: "none", color: "var(--t4)", cursor: "pointer", fontSize: 18, lineHeight: 1 }
+          }, React.createElement("i", { className: "fa-solid fa-xmark" }))
+        ),
+        React.createElement("div", { style: { marginBottom: 14 } },
+          React.createElement("label", { style: { fontSize: 12.5, color: "var(--t3)", display: "block", marginBottom: 6 } }, "Title *"),
+          React.createElement("input", {
+            className: "fi", placeholder: "My collection",
+            value: title, autoFocus: true,
+            onChange: function (e) { setTitle(e.target.value); },
+            onKeyDown: function (e) { if (e.key === "Enter") handleCreate(); },
+          })
+        ),
+        React.createElement("div", { style: { marginBottom: 20 } },
+          React.createElement("label", { style: { fontSize: 12.5, color: "var(--t3)", display: "block", marginBottom: 6 } }, "Description"),
+          React.createElement("textarea", {
+            className: "fi", placeholder: "Optional description\u2026",
+            rows: 3, value: desc,
+            style: { resize: "vertical" },
+            onChange: function (e) { setDesc(e.target.value); },
+          })
+        ),
+        React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } },
+          React.createElement("button", { className: "btn-ghost", onClick: onClose, disabled: saving }, "Cancel"),
+          React.createElement("button", {
+            className: "btn-primary", onClick: handleCreate,
+            disabled: saving || !title.trim(),
+          }, saving ? "Creating\u2026" : "Create collection")
+        )
+      )
+    );
+  }
+
+  // ─── AddToCollectionModal ─────────────────────────────────────────────────
+
+  function AddToCollectionModal(props) {
+    var itemId  = props.itemId;
+    var onClose = props.onClose;
+    var _colls   = useState(null); var colls   = _colls[0];   var setColls   = _colls[1];
+    var _inColls = useState([]);   var inColls  = _inColls[0]; var setInColls = _inColls[1];
+    var _busy    = useState({});   var busy     = _busy[0];    var setBusy    = _busy[1];
+
+    useEffect(function () {
+      Promise.all([
+        apiGet("/collections?per_page=60"),
+        apiGet("/items/" + itemId + "/collections"),
+      ]).then(function (results) {
+        setColls(results[0].collections || []);
+        setInColls((results[1].collections || []).map(function (c) { return c.slug; }));
+      }).catch(function () { setColls([]); });
+    }, [itemId]);
+
+    function toggle(slug) {
+      var isIn = inColls.indexOf(slug) >= 0;
+      setBusy(function (b) { return Object.assign({}, b, { [slug]: true }); });
+      var req = isIn
+        ? apiDelete("/collections/" + slug + "/items/" + itemId)
+        : apiPost("/collections/" + slug + "/items", { item_id: itemId });
+      req.then(function (d) {
+        if (d.ok || d.item_count !== undefined) {
+          setInColls(function (prev) {
+            return isIn ? prev.filter(function (s) { return s !== slug; }) : prev.concat([slug]);
+          });
+        } else {
+          toast(d.error || "Failed", "err");
+        }
+      })
+      .catch(function () { toast("Failed", "err"); })
+      .finally(function () {
+        setBusy(function (b) { var n = Object.assign({}, b); delete n[slug]; return n; });
+      });
+    }
+
+    return React.createElement("div", {
+      style: {
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16,
+      },
+      onClick: function (e) { if (e.target === e.currentTarget) onClose(); }
+    },
+      React.createElement("div", {
+        style: {
+          background: "var(--s1)", borderRadius: 14, padding: 24,
+          width: "100%", maxWidth: 420, border: "0.5px solid var(--b2)",
+          maxHeight: "70vh", display: "flex", flexDirection: "column",
+        }
+      },
+        React.createElement("div", {
+          style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }
+        },
+          React.createElement("span", { style: { fontSize: 15, fontWeight: 600, color: "var(--t1)" } }, "Add to collection"),
+          React.createElement("button", {
+            onClick: onClose,
+            style: { background: "none", border: "none", color: "var(--t4)", cursor: "pointer", fontSize: 18, lineHeight: 1 }
+          }, React.createElement("i", { className: "fa-solid fa-xmark" }))
+        ),
+        colls === null
+          ? React.createElement("div", { style: { textAlign: "center", padding: "24px 0", color: "var(--t5)" } },
+              React.createElement("i", { className: "fa-solid fa-spinner fa-spin" }))
+          : colls.length === 0
+            ? React.createElement("div", { style: { textAlign: "center", padding: "24px 0", color: "var(--t5)", fontSize: 13 } },
+                "You have no collections yet.")
+            : React.createElement("div", { style: { overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 } },
+                colls.map(function (coll) {
+                  var isIn = inColls.indexOf(coll.slug) >= 0;
+                  var loading = !!busy[coll.slug];
+                  return React.createElement("div", {
+                    key: coll.slug,
+                    style: {
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "10px 12px", borderRadius: 8,
+                      background: isIn ? "var(--ac-bg)" : "var(--s2)",
+                      border: "0.5px solid " + (isIn ? "var(--ac-border)" : "var(--b1)"),
+                    }
+                  },
+                    React.createElement("div", null,
+                      React.createElement("div", { style: { fontSize: 13.5, fontWeight: 500, color: "var(--t1)" } }, coll.title),
+                      React.createElement("div", { style: { fontSize: 11.5, color: "var(--t5)" } }, coll.item_count + " items")
+                    ),
+                    React.createElement("button", {
+                      onClick: function () { toggle(coll.slug); },
+                      disabled: loading,
+                      style: {
+                        padding: "5px 12px", borderRadius: 6, fontSize: 12,
+                        border: "0.5px solid " + (isIn ? "var(--ac-border)" : "var(--b2)"),
+                        background: isIn ? "var(--ac-bg)" : "transparent",
+                        color: isIn ? "var(--ac-text)" : "var(--t3)",
+                        cursor: "pointer", fontFamily: "inherit",
+                      }
+                    }, loading ? React.createElement("i", { className: "fa-solid fa-spinner fa-spin" })
+                                : isIn ? "Remove" : "Add")
+                  );
+                })
+              )
+      )
+    );
+  }
+
 
   // ─── Placeholder routes ───────────────────────────────────────────────────
 
@@ -676,7 +932,8 @@
     var _commentTotal = useState(0);    var commentTotal = _commentTotal[0]; var setCommentTotal = _commentTotal[1];
     var _commentPage  = useState(1);    var commentPage  = _commentPage[0];  var setCommentPage  = _commentPage[1];
     var _commentBody  = useState("");   var commentBody  = _commentBody[0];  var setCommentBody  = _commentBody[1];
-    var _commenting   = useState(false);var commenting   = _commenting[0];   var setCommenting   = _commenting[1];
+    var _commenting         = useState(false); var commenting         = _commenting[0];         var setCommenting         = _commenting[1];
+    var _showAddToCollection = useState(false); var showAddToCollection = _showAddToCollection[0]; var setShowAddToCollection = _showAddToCollection[1];
 
     useEffect(function () {
       Promise.all([
@@ -977,9 +1234,22 @@
           },
             React.createElement("i", { className: "fa-solid fa-trash", style: { marginRight: 5 } }),
             "Delete"
+          ),
+          currentUser && React.createElement("button", {
+            className: "btn-ghost",
+            style: { fontSize: 12, padding: "5px 12px" },
+            onClick: function () { setShowAddToCollection(true); },
+          },
+            React.createElement("i", { className: "fa-solid fa-layer-group", style: { marginRight: 5 } }),
+            "Collect"
           )
         )
       ),
+
+      showAddToCollection && React.createElement(AddToCollectionModal, {
+        itemId:  uuid,
+        onClose: function () { setShowAddToCollection(false); },
+      }),
 
       // Featured badge
       item.is_featured && React.createElement("div", {
@@ -1237,7 +1507,141 @@
     );
   }
 
-  function CollectionPage()     { return React.createElement(Placeholder, { title: "Collection" }); }
+  function CollectionPage(props) {
+    var slug        = props.slug;
+    var currentUser = props.currentUser;
+    var _coll     = useState(null);  var coll     = _coll[0];    var setColl     = _coll[1];
+    var _loading  = useState(true);  var loading  = _loading[0]; var setLoading  = _loading[1];
+    var _deleting = useState(false); var deleting = _deleting[0]; var setDeleting = _deleting[1];
+
+    useEffect(function () {
+      apiGet("/collections/" + slug)
+        .then(function (d) {
+          if (d.collection) setColl(d.collection);
+          setLoading(false);
+        })
+        .catch(function () { setLoading(false); });
+    }, [slug]);
+
+    function handleDelete() {
+      if (!window.confirm("Delete this collection? Items will not be deleted.")) return;
+      setDeleting(true);
+      apiDelete("/collections/" + slug)
+        .then(function (d) {
+          if (d.ok) {
+            toast("Collection deleted");
+            NE.navigate("/ext/" + SLUG);
+          } else {
+            toast(d.error || "Failed to delete", "err");
+            setDeleting(false);
+          }
+        })
+        .catch(function () { toast("Failed to delete", "err"); setDeleting(false); });
+    }
+
+    function handleRemoveItem(itemId) {
+      apiDelete("/collections/" + slug + "/items/" + itemId)
+        .then(function (d) {
+          if (d.ok || d.item_count !== undefined) {
+            setColl(function (prev) {
+              return Object.assign({}, prev, {
+                items:      prev.items.filter(function (i) { return i.id !== itemId; }),
+                item_count: Math.max((prev.item_count || 1) - 1, 0),
+              });
+            });
+          } else {
+            toast(d.error || "Failed", "err");
+          }
+        })
+        .catch(function () { toast("Failed", "err"); });
+    }
+
+    if (loading) return React.createElement("div", {
+      style: { textAlign: "center", padding: "80px 0", color: "var(--t5)" }
+    }, React.createElement("i", { className: "fa-solid fa-spinner fa-spin", style: { fontSize: 24 } }));
+
+    if (!coll) return React.createElement("div", {
+      style: { padding: "80px 0", textAlign: "center", color: "var(--t5)", fontSize: 14 }
+    }, "Collection not found.");
+
+    var isOwner = currentUser && (currentUser.id === coll.user_id || currentUser.role === "admin" || currentUser.role === "moderator");
+
+    return React.createElement("div", { style: { maxWidth: 960, margin: "0 auto", padding: "0 0 40px" } },
+
+      // Back button
+      React.createElement("button", {
+        className: "btn-ghost",
+        style: { fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 },
+        onClick: function () { NE.navigate("/ext/" + SLUG); }
+      },
+        React.createElement("i", { className: "fa-solid fa-arrow-left", style: { fontSize: 11 } }),
+        "Gallery"
+      ),
+
+      // Header
+      React.createElement("div", {
+        style: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6, gap: 12 }
+      },
+        React.createElement("div", null,
+          React.createElement("h1", { style: { fontSize: 22, fontWeight: 700, color: "var(--t1)", margin: "0 0 8px" } }, coll.title),
+          coll.user && React.createElement("div", {
+            style: { display: "flex", alignItems: "center", gap: 8, marginBottom: coll.description ? 10 : 0 }
+          },
+            React.createElement(Av, { user: coll.user, size: 22 }),
+            React.createElement("span", { style: { fontSize: 13, color: "var(--t4)" } }, coll.user.username),
+            React.createElement("span", { style: { fontSize: 12, color: "var(--t5)" } },
+              "· " + (coll.item_count || 0) + " items"
+            )
+          ),
+          coll.description && React.createElement("p", {
+            style: { fontSize: 14, color: "var(--t3)", margin: 0, lineHeight: 1.6 }
+          }, coll.description)
+        ),
+        isOwner && React.createElement("div", { style: { display: "flex", gap: 8, flexShrink: 0 } },
+          React.createElement("button", {
+            className: "btn-ghost",
+            style: { fontSize: 12.5, color: "var(--red)", borderColor: "rgba(239,68,68,0.3)" },
+            onClick: handleDelete, disabled: deleting
+          },
+            React.createElement("i", { className: "fa-solid fa-trash", style: { marginRight: 5 } }),
+            deleting ? "Deleting…" : "Delete"
+          )
+        )
+      ),
+
+      // Divider
+      React.createElement("div", { style: { height: 1, background: "var(--b1)", margin: "16px 0 20px" } }),
+
+      // Items grid
+      (!coll.items || coll.items.length === 0)
+        ? React.createElement("div", {
+            style: { textAlign: "center", padding: "60px 0", color: "var(--t5)", fontSize: 13 }
+          },
+            React.createElement("i", { className: "fa-solid fa-layer-group", style: { fontSize: 32, display: "block", marginBottom: 12 } }),
+            "No items in this collection yet."
+          )
+        : React.createElement("div", {
+            style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }
+          },
+            coll.items.map(function (item) {
+              return React.createElement("div", { key: item.id, style: { position: "relative" } },
+                React.createElement(GalleryCard, { item: item, navigate: NE.navigate }),
+                isOwner && React.createElement("button", {
+                  onClick: function (e) { e.stopPropagation(); handleRemoveItem(item.id); },
+                  title: "Remove from collection",
+                  style: {
+                    position: "absolute", top: 6, right: 6,
+                    background: "rgba(0,0,0,0.6)", border: "none",
+                    borderRadius: 6, color: "#fff", cursor: "pointer",
+                    width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 11, zIndex: 2,
+                  }
+                }, React.createElement("i", { className: "fa-solid fa-xmark" }))
+              );
+            })
+          )
+    );
+  }
   function GalleryTagPage()     { return React.createElement(Placeholder, { title: "Gallery tag" }); }
   function GalleryUserPage()    { return React.createElement(Placeholder, { title: "Gallery uploads" }); }
 

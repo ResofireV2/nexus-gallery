@@ -745,6 +745,166 @@ defmodule NexusGallery.ApiRouter do
     end)
   end
 
+
+  # -------------------------------------------------------------------------
+  # Collections
+  # -------------------------------------------------------------------------
+
+  get "/collections" do
+    require_permission(conn, "can_view_gallery", fn conn ->
+      params   = conn.query_params
+      s        = settings()
+      per_page = parse_int(params["per_page"], parse_int(s["items_per_page"], 24))
+      opts = [
+        page:     parse_int(params["page"], 1),
+        per_page: per_page,
+        sort:     params["sort"] || "newest",
+        user_id:  params["user_id"] && parse_int(params["user_id"], nil),
+        search:   params["search"],
+      ]
+      {collections, total} = NexusGallery.Collections.list_collections(opts)
+      per = Keyword.get(opts, :per_page)
+      page = Keyword.get(opts, :page)
+      json_resp(conn, 200, %{
+        collections: Enum.map(collections, &collection_json/1),
+        total:       total,
+        page:        page,
+        per_page:    per,
+        total_pages: ceil(total / per)
+      })
+    end)
+  end
+
+  post "/collections" do
+    require_permission(conn, "can_create_collection", fn conn ->
+      user   = conn.assigns.current_user
+      params = conn.body_params
+      title  = params["title"]
+      if is_nil(title) or String.trim(title) == "" do
+        json_resp(conn, 422, %{error: "Title is required"})
+      else
+        case NexusGallery.Collections.create_collection(user.id, %{
+          "title"       => String.trim(title),
+          "description" => params["description"],
+          "is_draft"    => false
+        }) do
+          {:ok, coll}         -> json_resp(conn, 201, %{collection: collection_json(coll)})
+          {:error, changeset} -> json_resp(conn, 422, %{errors: format_errors(changeset)})
+        end
+      end
+    end)
+  end
+
+  get "/collections/:slug" do
+    require_permission(conn, "can_view_gallery", fn conn ->
+      user = conn.assigns[:current_user]
+      case NexusGallery.Collections.get_collection_with_items(conn.params["slug"]) do
+        nil  -> json_resp(conn, 404, %{error: "Collection not found"})
+        coll ->
+          can_edit   = user != nil and (user.id == coll.user_id or user.role in ["admin", "moderator"])
+          can_delete = can_edit
+          json_resp(conn, 200, %{collection: Map.merge(coll, %{
+            can_edit:   can_edit,
+            can_delete: can_delete,
+            items:      Enum.map(coll.items, fn i -> Map.drop(i, [:updated_at]) end)
+          })})
+      end
+    end)
+  end
+
+  patch "/collections/:slug" do
+    require_auth(conn, fn conn ->
+      user = conn.assigns.current_user
+      case NexusGallery.Collections.get_collection_by_slug(conn.params["slug"]) do
+        nil  -> json_resp(conn, 404, %{error: "Collection not found"})
+        coll ->
+          unless user.id == coll.user_id or user.role in ["admin", "moderator"] do
+            json_resp(conn, 403, %{error: "Access denied"})
+          else
+            attrs = conn.body_params |> Map.take(["title", "description", "is_draft"])
+            case NexusGallery.Collections.update_collection(coll, attrs) do
+              {:ok, updated}      -> json_resp(conn, 200, %{collection: collection_json(updated)})
+              {:error, changeset} -> json_resp(conn, 422, %{errors: format_errors(changeset)})
+            end
+          end
+      end
+    end)
+  end
+
+  delete "/collections/:slug" do
+    require_auth(conn, fn conn ->
+      user = conn.assigns.current_user
+      case NexusGallery.Collections.get_collection_by_slug(conn.params["slug"]) do
+        nil  -> json_resp(conn, 404, %{error: "Collection not found"})
+        coll ->
+          unless user.id == coll.user_id or user.role in ["admin", "moderator"] do
+            json_resp(conn, 403, %{error: "Access denied"})
+          else
+            case NexusGallery.Collections.delete_collection(coll) do
+              :ok              -> json_resp(conn, 200, %{ok: true})
+              {:error, reason} -> json_resp(conn, 500, %{error: inspect(reason)})
+            end
+          end
+      end
+    end)
+  end
+
+  post "/collections/:slug/items" do
+    require_auth(conn, fn conn ->
+      user    = conn.assigns.current_user
+      item_id = conn.body_params["item_id"]
+      if is_nil(item_id) do
+        json_resp(conn, 422, %{error: "item_id is required"})
+      else
+        case NexusGallery.Collections.get_collection_by_slug(conn.params["slug"]) do
+          nil  -> json_resp(conn, 404, %{error: "Collection not found"})
+          coll ->
+            unless user.id == coll.user_id or user.role in ["admin", "moderator"] do
+              json_resp(conn, 403, %{error: "Access denied"})
+            else
+              s        = settings()
+              max_size = parse_int(s["max_collection_size"], 100)
+              if coll.item_count >= max_size do
+                json_resp(conn, 422, %{error: "Collection is full (max #{max_size} items)"})
+              else
+                case NexusGallery.Collections.add_item(coll, item_id) do
+                  :ok              -> json_resp(conn, 200, %{ok: true, item_count: coll.item_count + 1})
+                  {:error, reason} -> json_resp(conn, 422, %{error: reason})
+                end
+              end
+            end
+        end
+      end
+    end)
+  end
+
+  delete "/collections/:slug/items/:item_id" do
+    require_auth(conn, fn conn ->
+      user = conn.assigns.current_user
+      case NexusGallery.Collections.get_collection_by_slug(conn.params["slug"]) do
+        nil  -> json_resp(conn, 404, %{error: "Collection not found"})
+        coll ->
+          unless user.id == coll.user_id or user.role in ["admin", "moderator"] do
+            json_resp(conn, 403, %{error: "Access denied"})
+          else
+            case NexusGallery.Collections.remove_item(coll, conn.params["item_id"]) do
+              :ok              -> json_resp(conn, 200, %{ok: true, item_count: max(coll.item_count - 1, 0)})
+              {:error, reason} -> json_resp(conn, 422, %{error: reason})
+            end
+          end
+      end
+    end)
+  end
+
+  # Returns the current user's collections that contain this item
+  get "/items/:id/collections" do
+    require_auth(conn, fn conn ->
+      user = conn.assigns.current_user
+      colls = NexusGallery.Collections.collections_for_item(conn.params["id"], user.id)
+      json_resp(conn, 200, %{collections: Enum.map(colls, &collection_json/1)})
+    end)
+  end
+
   # -------------------------------------------------------------------------
   # Catch-all
   # -------------------------------------------------------------------------
@@ -829,6 +989,22 @@ defmodule NexusGallery.ApiRouter do
       allow_embeds: tag.allow_embeds,
       item_count:   tag.item_count,
       inserted_at:  Map.get(tag, :inserted_at)
+    }
+  end
+
+  defp collection_json(c) do
+    %{
+      id:          Map.get(c, :id) || uuid_str(Map.get(c, :id)),
+      user_id:     c.user_id,
+      user:        Map.get(c, :user),
+      title:       c.title,
+      slug:        c.slug,
+      description: c.description,
+      cover_url:   c.cover_url,
+      is_draft:    c.is_draft,
+      is_featured: c.is_featured,
+      item_count:  c.item_count,
+      inserted_at: c.inserted_at
     }
   end
 

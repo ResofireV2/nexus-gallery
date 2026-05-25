@@ -141,6 +141,9 @@ defmodule NexusGallery.Items do
     |> enrich_uploader_list()
   end
 
+  @doc "Public wrapper for enriching a list of Item structs — used by Collections."
+  def enrich_list_public(items), do: enrich_list(items)
+
   # ---------------------------------------------------------------------------
   # Private — struct to plain map
   # ---------------------------------------------------------------------------
