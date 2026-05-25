@@ -298,14 +298,26 @@ defmodule NexusGallery.Items do
   end
 
   defp set_tags(item_id, tag_ids) do
-    id_str = uuid_str(item_id)
+    # Repo.insert_all with a string table has no schema type info — Postgrex
+    # receives raw values and its uuid encoder requires 16-byte binaries.
+    # Ecto.UUID.dump!/1 converts a string UUID to the required binary form.
+    id_bin = case Ecto.UUID.dump(uuid_str(item_id)) do
+      {:ok, bin} -> bin
+      :error     -> raise ArgumentError, "invalid item_id UUID: #{inspect(item_id)}"
+    end
+
     Repo.delete_all(
       from it in "nexus_gallery_item_tags",
-        where: it.item_id == type(^id_str, :binary_id)
+        where: it.item_id == type(^uuid_str(item_id), :binary_id)
     )
-    rows = Enum.map(tag_ids, fn tag_id ->
-      %{item_id: id_str, tag_id: tag_id}
+
+    rows = Enum.flat_map(tag_ids, fn tag_id ->
+      case Ecto.UUID.dump(tag_id) do
+        {:ok, tag_bin} -> [%{item_id: id_bin, tag_id: tag_bin}]
+        :error         -> []
+      end
     end)
+
     if rows != [], do: Repo.insert_all("nexus_gallery_item_tags", rows, on_conflict: :nothing)
   end
 end
