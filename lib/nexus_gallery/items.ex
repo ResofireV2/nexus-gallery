@@ -132,7 +132,7 @@ defmodule NexusGallery.Items do
     }
   end
 
-  def top_rated(limit \ 4) do
+  def top_rated(limit \\ 4) do
     ratings_q = Ecto.Query.from(r in "nexus_gallery_ratings",
       where: r.subject_type == "item",
       group_by: r.subject_id,
