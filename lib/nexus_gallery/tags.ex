@@ -18,7 +18,7 @@ defmodule NexusGallery.Tags do
       join: i in NexusGallery.Item, on: i.id == it.item_id,
       where: i.is_draft == false,
       group_by: it.tag_id,
-      select: %{tag_id: it.tag_id, count: Ecto.Query.fragment("count(*)")}
+      select: %{tag_id: it.tag_id, count: count(it.item_id)}
     )
     from(t in Tag,
       left_join: c in subquery(count_q), on: c.tag_id == t.id,
