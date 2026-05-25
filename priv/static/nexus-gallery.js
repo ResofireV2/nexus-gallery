@@ -4,7 +4,18 @@
   const NE   = window.NexusExtensions;
   const SLUG = "nexus-gallery";
   const { useState, useEffect, useRef, useCallback } = window.React;
-  const { Toggle, toast, Av, Md } = window.NexusComponents;
+  const { Toggle, toast, Av, Md, Select } = window.NexusComponents;
+
+  function useIsMobile() {
+    var _mob = useState(window.innerWidth <= 767); var isMobile = _mob[0]; var setIsMobile = _mob[1];
+    useEffect(function () {
+      function onResize() { setIsMobile(window.innerWidth <= 767); }
+      window.addEventListener("resize", onResize);
+      return function () { window.removeEventListener("resize", onResize); };
+    }, []);
+    return isMobile;
+  }
+
 
   // ─── Shared fetch helpers ─────────────────────────────────────────────────
 
@@ -355,6 +366,7 @@
       window.scrollTo(0, 0);
     }
 
+    var isMobile = useIsMobile();
     var tabs = ["Images", "Collections", "Videos", "Embeds"];
     var sorts = [
       { key: "newest",         label: "Newest" },
@@ -389,59 +401,102 @@
         })
       ),
 
-      // Toolbar: sort + tag chips + search + upload button
-      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6, padding: "10px 0", flexWrap: "wrap" } },
-        // Sort pills
-        sorts.map(function (s) {
-          return React.createElement("div", {
-            key: s.key, onClick: function () { handleSortChange(s.key); },
-            style: { fontSize: 11.5, padding: "3px 10px", borderRadius: 20, border: "0.5px solid " + (sort === s.key ? "var(--ac)" : "var(--b2)"), background: sort === s.key ? "var(--ac)" : "transparent", color: sort === s.key ? "#fff" : "var(--t4)", cursor: "pointer" }
-          }, s.label);
-        }),
-        React.createElement("div", { style: { width: "0.5px", height: 16, background: "var(--b2)", margin: "0 2px", flexShrink: 0 } }),
-        // Tag chips
-        React.createElement("div", {
-          onClick: function () { handleTagChange(null); },
-          style: { fontSize: 11.5, padding: "3px 10px", borderRadius: 20, border: "0.5px solid " + (!activeTag ? "var(--ac)" : "var(--b1)"), color: !activeTag ? "var(--ac-text)" : "var(--t4)", cursor: "pointer" }
-        }, "All"),
-        tags.slice(0, 6).map(function (tag) {
-          var active = activeTag === tag.slug;
-          return React.createElement("div", {
-            key: tag.id, onClick: function () { handleTagChange(tag.slug); },
-            style: { display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, padding: "3px 10px", borderRadius: 20, border: "0.5px solid " + (active ? tag.color : "var(--b1)"), color: active ? tag.color : "var(--t4)", cursor: "pointer" }
-          },
-            React.createElement("div", { style: { width: 7, height: 7, borderRadius: "50%", background: tag.color, flexShrink: 0 } }),
-            tag.name
-          );
-        }),
-        // Spacer
-        React.createElement("div", { style: { flex: 1 } }),
-        // Search
-        React.createElement("input", {
-          value: search,
-          onChange: function (e) { handleSearchChange(e.target.value); },
-          placeholder: "Search…",
-          style: { padding: "5px 12px", background: "rgba(255,255,255,0.05)", border: "0.5px solid var(--b2)", borderRadius: 20, color: "var(--t1)", fontSize: 12.5, outline: "none", fontFamily: "inherit", width: 160 }
-        }),
-        // Upload button
-        permissions.can_upload_image && React.createElement("button", {
-          className: "btn-primary",
-          style: { fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, padding: "6px 14px" },
-          onClick: function () { setShowUpload(true); }
-        },
-          React.createElement("i", { className: "fa-solid fa-upload", style: { fontSize: 11 } }),
-          "Upload"
-        ),
-        // New collection button
-        permissions.can_create_collection && React.createElement("button", {
-          className: "btn-ghost",
-          style: { fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, padding: "6px 14px" },
-          onClick: function () { setShowNewCollection(true); }
-        },
-          React.createElement("i", { className: "fa-solid fa-layer-group", style: { fontSize: 11 } }),
-          "New collection"
+      // Toolbar — responsive: on mobile collapse sort+tags into dropdowns
+      isMobile
+      // ── Mobile toolbar ───────────────────────────────────────────────────
+      ? React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, padding: "10px 0" } },
+          // Row 1: sort dropdown + tag dropdown + search
+          React.createElement("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
+            React.createElement(Select, {
+              value: sort,
+              onChange: handleSortChange,
+              style: { fontSize: 12.5, flex: 1 },
+              options: sorts.map(function (s) { return { value: s.key, label: s.label }; })
+            }),
+            React.createElement(Select, {
+              value: activeTag || "",
+              onChange: function (v) { handleTagChange(v || null); },
+              style: { fontSize: 12.5, flex: 1 },
+            },
+              React.createElement("option", { value: "" }, "All tags"),
+              tags.map(function (tag) {
+                return React.createElement("option", { key: tag.id, value: tag.slug }, tag.name);
+              })
+            ),
+            React.createElement("input", {
+              value: search,
+              onChange: function (e) { handleSearchChange(e.target.value); },
+              placeholder: "Search…",
+              style: { padding: "6px 12px", background: "rgba(255,255,255,0.05)", border: "0.5px solid var(--b2)", borderRadius: 8, color: "var(--t1)", fontSize: 12.5, outline: "none", fontFamily: "inherit", flex: 1.2 }
+            })
+          ),
+          // Row 2: action buttons
+          React.createElement("div", { style: { display: "flex", gap: 6 } },
+            permissions.can_upload_image && React.createElement("button", {
+              className: "btn-primary",
+              style: { fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", flex: 1, justifyContent: "center" },
+              onClick: function () { setShowUpload(true); }
+            },
+              React.createElement("i", { className: "fa-solid fa-upload", style: { fontSize: 11 } }),
+              "Upload"
+            ),
+            permissions.can_create_collection && React.createElement("button", {
+              className: "btn-ghost",
+              style: { fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", flex: 1, justifyContent: "center" },
+              onClick: function () { setShowNewCollection(true); }
+            },
+              React.createElement("i", { className: "fa-solid fa-layer-group", style: { fontSize: 11 } }),
+              "New collection"
+            )
+          )
         )
-      ),
+      // ── Desktop toolbar ──────────────────────────────────────────────────
+      : React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6, padding: "10px 0", flexWrap: "wrap" } },
+          sorts.map(function (s) {
+            return React.createElement("div", {
+              key: s.key, onClick: function () { handleSortChange(s.key); },
+              style: { fontSize: 11.5, padding: "3px 10px", borderRadius: 20, border: "0.5px solid " + (sort === s.key ? "var(--ac)" : "var(--b2)"), background: sort === s.key ? "var(--ac)" : "transparent", color: sort === s.key ? "#fff" : "var(--t4)", cursor: "pointer" }
+            }, s.label);
+          }),
+          React.createElement("div", { style: { width: "0.5px", height: 16, background: "var(--b2)", margin: "0 2px", flexShrink: 0 } }),
+          React.createElement("div", {
+            onClick: function () { handleTagChange(null); },
+            style: { fontSize: 11.5, padding: "3px 10px", borderRadius: 20, border: "0.5px solid " + (!activeTag ? "var(--ac)" : "var(--b1)"), color: !activeTag ? "var(--ac-text)" : "var(--t4)", cursor: "pointer" }
+          }, "All"),
+          tags.slice(0, 6).map(function (tag) {
+            var active = activeTag === tag.slug;
+            return React.createElement("div", {
+              key: tag.id, onClick: function () { handleTagChange(tag.slug); },
+              style: { display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, padding: "3px 10px", borderRadius: 20, border: "0.5px solid " + (active ? tag.color : "var(--b1)"), color: active ? tag.color : "var(--t4)", cursor: "pointer" }
+            },
+              React.createElement("div", { style: { width: 7, height: 7, borderRadius: "50%", background: tag.color, flexShrink: 0 } }),
+              tag.name
+            );
+          }),
+          React.createElement("div", { style: { flex: 1 } }),
+          React.createElement("input", {
+            value: search,
+            onChange: function (e) { handleSearchChange(e.target.value); },
+            placeholder: "Search…",
+            style: { padding: "5px 12px", background: "rgba(255,255,255,0.05)", border: "0.5px solid var(--b2)", borderRadius: 20, color: "var(--t1)", fontSize: 12.5, outline: "none", fontFamily: "inherit", width: 160 }
+          }),
+          permissions.can_upload_image && React.createElement("button", {
+            className: "btn-primary",
+            style: { fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, padding: "6px 14px" },
+            onClick: function () { setShowUpload(true); }
+          },
+            React.createElement("i", { className: "fa-solid fa-upload", style: { fontSize: 11 } }),
+            "Upload"
+          ),
+          permissions.can_create_collection && React.createElement("button", {
+            className: "btn-ghost",
+            style: { fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, padding: "6px 14px" },
+            onClick: function () { setShowNewCollection(true); }
+          },
+            React.createElement("i", { className: "fa-solid fa-layer-group", style: { fontSize: 11 } }),
+            "New collection"
+          )
+        ),
 
       // Grid
       loading
@@ -452,7 +507,14 @@
               React.createElement("i", { className: activeTab === "Collections" ? "fa-solid fa-layer-group" : "fa-solid fa-images", style: { fontSize: 32, display: "block", marginBottom: 12 } }),
               activeTab === "Collections" ? "No collections yet." : "No items found."
             )
-          : React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, paddingTop: 12 } },
+          : React.createElement("div", {
+              style: {
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
+                gap: isMobile ? 8 : 10,
+                paddingTop: 12
+              }
+            },
               activeTab === "Collections"
               ? items.map(function (coll) {
                   return React.createElement(CollectionCard, { key: coll.id, collection: coll });
