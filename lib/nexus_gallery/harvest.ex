@@ -36,13 +36,15 @@ defmodule NexusGallery.Harvest do
   # ---------------------------------------------------------------------------
 
   defp do_harvest(post, _settings) do
-    # Get forum tag slugs on this post
+    # Get forum tag slugs + space slug on this post
     forum_slugs = fetch_forum_tag_slugs(post.id)
-    if forum_slugs == [] do
+    space_slug  = if post.space_id, do: fetch_space_slug(post.space_id), else: nil
+    all_slugs   = (forum_slugs ++ List.wrap(space_slug)) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+    if all_slugs == [] do
       :ok
     else
-      # Find harvest mappings for these slugs
-      mappings = fetch_mappings_for_slugs(forum_slugs)
+      # Find harvest mappings for these slugs (tags and/or spaces)
+      mappings = fetch_mappings_for_slugs(all_slugs)
       if mappings == [] do
         :ok
       else
@@ -87,7 +89,7 @@ defmodule NexusGallery.Harvest do
     Repo.one(
       from p in "posts",
         where: p.id == ^post_id and p.hidden == false,
-        select: %{id: p.id, user_id: p.user_id, title: p.title, body: p.body}
+        select: %{id: p.id, user_id: p.user_id, title: p.title, body: p.body, space_id: p.space_id}
     )
   end
 
@@ -97,6 +99,14 @@ defmodule NexusGallery.Harvest do
         join: t in "tags", on: t.id == pt.tag_id,
         where: pt.post_id == ^post_id,
         select: fragment("?::text", t.slug)
+    )
+  end
+
+  defp fetch_space_slug(space_id) do
+    Repo.one(
+      from s in "spaces",
+        where: s.id == ^space_id,
+        select: fragment("?::text", s.slug)
     )
   end
 

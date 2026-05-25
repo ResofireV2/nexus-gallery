@@ -2863,7 +2863,7 @@
           "Tag mappings"
         ),
         React.createElement("div", { style: { fontSize: 12, color: "var(--t5)", marginBottom: 12 } },
-          "When a post is tagged with a forum tag slug below, its images are imported into the linked gallery tag."
+          "When a post is made in a matching space, or tagged with a matching forum tag, its images are automatically imported into the linked gallery tag. Enter either a space slug (e.g. \"general\") or a forum tag slug."
         ),
         mappings && mappings.length === 0 && React.createElement("div", {
           style: { fontSize: 13, color: "var(--t5)", padding: "16px 0" }
@@ -2902,7 +2902,7 @@
             React.createElement("input", {
               style: Object.assign({}, inputStyle, { width: "100%", boxSizing: "border-box" }),
               value: newSlug,
-              placeholder: "e.g. screenshots",
+              placeholder: "e.g. general (space) or screenshots (tag)",
               onChange: function (e) { setNewSlug(e.target.value); }
             })
           ),
