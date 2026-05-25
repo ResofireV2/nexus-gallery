@@ -2629,7 +2629,140 @@
   // ─── Profile tab ─────────────────────────────────────────────────────────
 
   function GalleryProfileTab(props) {
-    return React.createElement(Placeholder, { title: "Gallery uploads for " + (props.username || "") });
+    var username    = props.username;
+    var currentUser = props.current_user;
+    var isMobile    = useIsMobile();
+
+    var _user        = useState(null);    var user        = _user[0];        var setUser        = _user[1];
+    var _items       = useState([]);      var items       = _items[0];       var setItems       = _items[1];
+    var _total       = useState(0);       var total       = _total[0];       var setTotal       = _total[1];
+    var _pages       = useState(1);       var pages       = _pages[0];       var setPages       = _pages[1];
+    var _page        = useState(1);       var page        = _page[0];        var setPage        = _page[1];
+    var _loading     = useState(true);    var loading     = _loading[0];     var setLoading     = _loading[1];
+    var _notFound    = useState(false);   var notFound    = _notFound[0];    var setNotFound    = _notFound[1];
+    var _mediaType   = useState("all");   var mediaType   = _mediaType[0];   var setMediaType   = _mediaType[1];
+    var _sort        = useState("newest");var sort        = _sort[0];        var setSort        = _sort[1];
+    var _settings    = useState({});      var settings    = _settings[0];    var setSettings    = _settings[1];
+
+    // Load user info and settings once on mount
+    useEffect(function () {
+      Promise.all([
+        apiGet("/users/" + encodeURIComponent(username)),
+        apiGet("/permissions")
+      ]).then(function (results) {
+        if (results[0].user) setUser(results[0].user);
+        else setNotFound(true);
+        setSettings(results[1] || {});
+      }).catch(function () { setNotFound(true); });
+    }, [username]);
+
+    // Load items when user, page, mediaType or sort changes
+    useEffect(function () {
+      if (!user) return;
+      setLoading(true);
+      var url = "/items?user_id=" + user.id + "&page=" + page + "&sort=" + sort;
+      if (mediaType !== "all") url += "&type=" + mediaType;
+      apiGet(url)
+        .then(function (d) {
+          setItems(d.items || []);
+          setTotal(d.total || 0);
+          setPages(d.total_pages || 1);
+          setLoading(false);
+        })
+        .catch(function () { setLoading(false); });
+    }, [user && user.id, page, mediaType, sort]);
+
+    if (notFound) return React.createElement("div", {
+      style: { padding: "32px 0", textAlign: "center", color: "var(--t5)", fontSize: 13 }
+    }, "No gallery uploads found.");
+
+    if (!user) return React.createElement("div", {
+      style: { padding: "32px 0", textAlign: "center", color: "var(--t5)" }
+    }, React.createElement("i", { className: "fa-solid fa-spinner fa-spin" }));
+
+    // Build media type tabs — only show Videos/Embeds if enabled
+    var typeTabs = [{ key: "all", label: "All" }, { key: "image", label: "Images" }];
+    if (settings.videos_enabled) typeTabs.push({ key: "video", label: "Videos" });
+    if (settings.embeds_enabled) typeTabs.push({ key: "embed", label: "Embeds" });
+
+    var sorts = [
+      { key: "newest", label: "Newest" },
+      { key: "oldest", label: "Oldest" },
+      { key: "top_rated", label: "Top rated" },
+      { key: "most_commented", label: "Most commented" },
+    ];
+
+    var pillStyle = function (active) { return {
+      fontSize: 12, padding: "4px 12px", borderRadius: 20, cursor: "pointer",
+      background: active ? "var(--ac-bg)" : "transparent",
+      color:      active ? "var(--ac-text)" : "var(--t4)",
+      border:     active ? "0.5px solid var(--ac-border)" : "0.5px solid var(--b2)",
+      fontFamily: "inherit",
+    }; };
+
+    return React.createElement("div", { style: { paddingBottom: 24 } },
+
+      // Type tabs + sort row
+      React.createElement("div", {
+        style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 14, flexWrap: "wrap" }
+      },
+        // Type tabs
+        React.createElement("div", { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+          typeTabs.map(function (t) {
+            return React.createElement("button", {
+              key: t.key,
+              style: pillStyle(mediaType === t.key),
+              onClick: function () { setMediaType(t.key); setPage(1); }
+            }, t.label);
+          })
+        ),
+        // Sort
+        React.createElement("select", {
+          style: {
+            fontSize: 12, padding: "4px 8px", borderRadius: 8,
+            background: "var(--s2)", border: "0.5px solid var(--b2)",
+            color: "var(--t3)", fontFamily: "inherit", cursor: "pointer", outline: "none"
+          },
+          value: sort,
+          onChange: function (e) { setSort(e.target.value); setPage(1); }
+        },
+          sorts.map(function (s) {
+            return React.createElement("option", { key: s.key, value: s.key }, s.label);
+          })
+        )
+      ),
+
+      // Grid or empty state
+      loading
+        ? React.createElement("div", { style: { padding: "32px 0", textAlign: "center", color: "var(--t5)" } },
+            React.createElement("i", { className: "fa-solid fa-spinner fa-spin" }))
+        : items.length === 0
+          ? React.createElement("div", { style: { padding: "32px 0", textAlign: "center", color: "var(--t5)", fontSize: 13 } },
+              "No uploads yet.")
+          : React.createElement("div", {
+              style: { display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: isMobile ? 8 : 10 }
+            },
+              items.map(function (item) {
+                return React.createElement(GalleryCard, { key: item.id, item: item, navigate: NE.navigate });
+              })
+            ),
+
+      // Pagination
+      pages > 1 && React.createElement("div", {
+        style: { display: "flex", justifyContent: "center", gap: 6, marginTop: 16 }
+      },
+        page > 1 && React.createElement("button", {
+          className: "btn-ghost", style: { fontSize: 12.5 },
+          onClick: function () { setPage(function (p) { return p - 1; }); }
+        }, React.createElement("i", { className: "fa-solid fa-chevron-left" })),
+        React.createElement("span", { style: { fontSize: 12.5, color: "var(--t4)", padding: "6px 10px" } },
+          page + " / " + pages),
+        page < pages && React.createElement("button", {
+          className: "btn-ghost", style: { fontSize: 12.5 },
+          onClick: function () { setPage(function (p) { return p + 1; }); }
+        }, React.createElement("i", { className: "fa-solid fa-chevron-right" }))
+      )
+    );
   }
 
   // ─── Register all surfaces ────────────────────────────────────────────────
