@@ -111,14 +111,19 @@ defmodule NexusGallery.Harvest do
     )
   end
 
-  @doc "Extracts /uploads/posts/ image URLs from markdown or rich text body."
+  @doc """
+  Extracts /uploads/posts/ image URLs from a post body.
+
+  Nexus composer inserts images as [![alt](webpUrl)](originalUrl).
+  We extract only the inner img src (the webp) to avoid creating duplicate
+  gallery items for the same image (one per webp, one per original).
+  """
   def extract_image_urls(nil), do: []
   def extract_image_urls(body) do
-    # Match markdown image syntax: ![alt](/uploads/posts/...)
-    # and plain URLs in angle brackets or bare: /uploads/posts/...
-    # and HTML img src="/uploads/posts/..."
-    pattern = ~r{/uploads/posts/[^\s"')>\]]+}
-    Regex.scan(pattern, body)
+    # Extract inner img src from markdown image syntax: ![alt](url) or [![alt](url)](href)
+    # Captures the URL inside the image brackets specifically.
+    img_pattern = ~r{!\[[^\]]*\]\((/uploads/posts/[^\)\s]+)\)}
+    Regex.scan(img_pattern, body, capture: :all_but_first)
     |> List.flatten()
     |> Enum.uniq()
   end
