@@ -93,8 +93,8 @@ defmodule NexusGallery.ApiRouter do
       embeds_enabled:    s["embeds_enabled"] != false,
       ratings_enabled:       s["ratings_enabled"] != false,
       reactions_enabled:     s["reactions_enabled"] != false,
-      block_self_ratings:    s["block_self_ratings"] != false,
-      block_self_reactions:  s["block_self_reactions"] != false
+      block_self_ratings:    s["block_self_ratings"] == true,
+      block_self_reactions:  s["block_self_reactions"] == true
     })
   end
 
@@ -401,7 +401,7 @@ defmodule NexusGallery.ApiRouter do
           case Ecto.UUID.dump(item_id_str) do
             {:ok, id_bin} ->
               s = settings()
-              block_self = s["block_self_ratings"] != false
+              block_self = s["block_self_ratings"] == true
               item_owner = Nexus.Repo.one(
                 Ecto.Query.from i in NexusGallery.Item,
                   where: i.id == type(^item_id_str, :binary_id),
@@ -502,7 +502,7 @@ defmodule NexusGallery.ApiRouter do
           {:ok, id_bin} ->
             s = settings()
             # Check self-reaction block (default: on)
-            block_self = s["block_self_reactions"] != false
+            block_self = s["block_self_reactions"] == true
             item_owner = Nexus.Repo.one(
               Ecto.Query.from i in NexusGallery.Item,
                 where: i.id == type(^item_id_str, :binary_id),
