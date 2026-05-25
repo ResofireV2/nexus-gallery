@@ -405,7 +405,7 @@
       isMobile
       // ── Mobile toolbar ───────────────────────────────────────────────────
       ? React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, padding: "10px 0" } },
-          // Row 1: sort dropdown + tag dropdown + search
+          // Row 1: sort dropdown + tag dropdown
           React.createElement("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
             React.createElement(Select, {
               value: sort,
@@ -422,14 +422,15 @@
               tags.map(function (tag) {
                 return React.createElement("option", { key: tag.id, value: tag.slug }, tag.name);
               })
-            ),
-            React.createElement("input", {
-              value: search,
-              onChange: function (e) { handleSearchChange(e.target.value); },
-              placeholder: "Search…",
-              style: { padding: "6px 12px", background: "rgba(255,255,255,0.05)", border: "0.5px solid var(--b2)", borderRadius: 8, color: "var(--t1)", fontSize: 12.5, outline: "none", fontFamily: "inherit", flex: 1.2 }
-            })
+            )
           ),
+          // Row 2: search bar full width
+          React.createElement("input", {
+            value: search,
+            onChange: function (e) { handleSearchChange(e.target.value); },
+            placeholder: "Search…",
+            style: { padding: "6px 12px", background: "rgba(255,255,255,0.05)", border: "0.5px solid var(--b2)", borderRadius: 8, color: "var(--t1)", fontSize: 12.5, outline: "none", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }
+          }),
           // Row 2: action buttons
           React.createElement("div", { style: { display: "flex", gap: 6 } },
             permissions.can_upload_image && React.createElement("button", {
