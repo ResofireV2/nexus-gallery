@@ -487,15 +487,15 @@ defmodule NexusGallery.ApiRouter do
       else
         case Ecto.UUID.dump(item_id_str) do
           {:ok, id_bin} ->
-            existing = Nexus.Repo.one(
-              Ecto.Query.from r in "nexus_gallery_reactions",
+            exists = Nexus.Repo.aggregate(
+              Ecto.Query.from(r in "nexus_gallery_reactions",
                 where: r.user_id == ^user.id
                   and r.subject_type == "item"
                   and r.subject_id == ^id_bin
-                  and r.emoji == ^emoji,
-                select: r.id
-            )
-            if existing do
+                  and r.emoji == ^emoji),
+              :count, :id
+            ) > 0
+            if exists do
               # Toggle off
               Nexus.Repo.delete_all(
                 Ecto.Query.from r in "nexus_gallery_reactions",
