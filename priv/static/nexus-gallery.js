@@ -86,8 +86,15 @@
   // ─── Upload modal ─────────────────────────────────────────────────────────
 
   function UploadModal(props) {
-    var onClose    = props.onClose;
-    var onUploaded = props.onUploaded;
+    var onClose       = props.onClose;
+    var onUploaded    = props.onUploaded;
+    var videosEnabled = props.videosEnabled || false;
+    var acceptTypes   = videosEnabled
+      ? "image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm,video/quicktime"
+      : "image/jpeg,image/png,image/gif,image/webp";
+    var hintText = videosEnabled
+      ? "JPEG, PNG, GIF, WebP, MP4, WebM"
+      : "JPEG, PNG, GIF, WebP";
 
     var _entries = useState([]); var entries = _entries[0]; var setEntries = _entries[1];
     var inputRef = useRef(null);
@@ -103,7 +110,8 @@
     }
 
     function startUpload(idx, entry) {
-      apiPost("/items/draft", { media_type: "image" })
+      var mediaType = (entry.file.type || "").startsWith("video/") ? "video" : "image";
+      apiPost("/items/draft", { media_type: mediaType })
         .then(function (d) {
           if (!d.id) throw new Error(d.error || "Failed to create draft");
           var draftId = d.id;
@@ -192,7 +200,7 @@
           React.createElement("button", { className: "btn-ghost", style: { fontSize: 13 }, onClick: onClose, disabled: anyUploading }, "Cancel"),
           allDone && React.createElement("button", { className: "btn-primary", style: { fontSize: 13 }, onClick: handleContinue }, "Continue")
         ),
-        React.createElement("input", { ref: inputRef, type: "file", accept: "image/jpeg,image/png,image/gif,image/webp", multiple: true, style: { display: "none" }, onChange: function (e) { if (e.target.files.length) handleFiles(e.target.files); } })
+        React.createElement("input", { ref: inputRef, type: "file", accept: acceptTypes, multiple: true, style: { display: "none" }, onChange: function (e) { if (e.target.files.length) handleFiles(e.target.files); } })
       )
     );
   }
@@ -462,6 +470,7 @@
       showUpload && React.createElement(UploadModal, {
         onClose: function () { setShowUpload(false); },
         onUploaded: function () { setShowUpload(false); },
+        videosEnabled: gallerySettings.videos_enabled || false,
       }),
       showEmbed && React.createElement(EmbedModal, {
         onClose: function () { setShowEmbed(false); },

@@ -64,14 +64,10 @@ defmodule NexusGallery.Items do
   def get_item_with_tags(id) do
     # Increment view_count asynchronously — fire and forget
     Task.start(fn ->
-      case Ecto.UUID.dump(id) do
-        {:ok, bin} ->
-          Repo.update_all(
-            Ecto.Query.from(i in Item, where: i.id == ^bin),
-            inc: [view_count: 1]
-          )
-        _ -> :ok
-      end
+      Repo.update_all(
+        Ecto.Query.from(i in Item, where: i.id == type(^id, :binary_id)),
+        inc: [view_count: 1]
+      )
     end)
     case Repo.get(Item, id) do
       nil  -> nil
