@@ -91,8 +91,8 @@ defmodule NexusGallery.ApiRouter do
       permissions:       resolved,
       videos_enabled:    s["videos_enabled"] == true,
       embeds_enabled:    s["embeds_enabled"] != false,
-      ratings_enabled:       s["ratings_enabled"] != false,
-      reactions_enabled:     s["reactions_enabled"] != false,
+      ratings_enabled:       s["ratings_enabled"] == true,
+      reactions_enabled:     s["reactions_enabled"] == true,
       block_self_ratings:    s["block_self_ratings"] == true,
       block_self_reactions:  s["block_self_reactions"] == true
     })

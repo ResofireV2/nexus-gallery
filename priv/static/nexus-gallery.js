@@ -972,7 +972,7 @@
 
       // ── Ratings and reactions ────────────────────────────
 
-      !editing && (perms.ratings_enabled !== false) && React.createElement("div", {
+      !editing && (perms.ratings_enabled === true) && React.createElement("div", {
         style: { marginBottom: 16 }
       },
         React.createElement(StarRating, {
@@ -985,7 +985,7 @@
         })
       ),
 
-      !editing && (perms.reactions_enabled !== false) && React.createElement("div", {
+      !editing && (perms.reactions_enabled === true) && React.createElement("div", {
         style: { marginBottom: 20 }
       },
         React.createElement(ReactionStrip, {
