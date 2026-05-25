@@ -230,15 +230,19 @@ defmodule NexusGallery.ApiRouter do
   get "/items/:id" do
     require_permission(conn, "can_view_gallery", fn conn ->
       user = conn.assigns[:current_user]
-      case Items.get_item_with_tags(conn.params["id"]) do
-        nil  -> json_resp(conn, 404, %{error: "Item not found"})
-        item ->
-          owner_or_admin = user && (user.id == item.user_id || user.role in ["admin", "moderator"])
-          if item.is_draft and not owner_or_admin do
-            json_resp(conn, 404, %{error: "Item not found"})
-          else
-            json_resp(conn, 200, %{item: item_json(item, user)})
-          end
+      try do
+        case Items.get_item_with_tags(conn.params["id"]) do
+          nil  -> json_resp(conn, 404, %{error: "Item not found"})
+          item ->
+            owner_or_admin = user && (user.id == item.user_id || user.role in ["admin", "moderator"])
+            if item.is_draft and not owner_or_admin do
+              json_resp(conn, 404, %{error: "Item not found"})
+            else
+              json_resp(conn, 200, %{item: item_json(item, user)})
+            end
+        end
+      rescue
+        e -> json_resp(conn, 500, %{error: Exception.message(e), type: inspect(e.__struct__)})
       end
     end)
   end
