@@ -459,7 +459,7 @@ defmodule NexusGallery.ApiRouter do
       allow_videos: tag.allow_videos,
       allow_embeds: tag.allow_embeds,
       item_count:   tag.item_count,
-      inserted_at:  tag.inserted_at
+      inserted_at:  Map.get(tag, :inserted_at)
     }
   end
 
