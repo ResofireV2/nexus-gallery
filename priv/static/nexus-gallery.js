@@ -2627,7 +2627,7 @@
         { key: "tags",    label: "Tags",    icon: "fa-tag",       render: function () { return React.createElement(TagsTab); } },
         { key: "queue",   label: "Queue",   icon: "fa-clock",     render: function () { return React.createElement(QueueTab); } },
         { key: "harvest", label: "Harvest", icon: "fa-seedling",  render: function () { return React.createElement(HarvestTab); } },
-        { key: "stats",   label: "Stats",   icon: "fa-chart-bar", render: function () { return React.createElement(ComingSoonTab, { label: "Gallery stats" }); } },
+        { key: "stats",   label: "Stats",   icon: "fa-chart-bar", render: function () { return React.createElement(StatsTab); } },
       ]
     });
   }
@@ -3251,6 +3251,181 @@
           className: "btn-ghost", style: { fontSize: 12.5 },
           onClick: function () { load(page + 1); }
         }, React.createElement("i", { className: "fa-solid fa-chevron-right" }))
+      )
+    );
+  }
+
+  // ─── StatsTab ─────────────────────────────────────────────────────────────
+
+  function StatsTab() {
+    var _data    = useState(null);  var data    = _data[0];    var setData    = _data[1];
+    var _loading = useState(true);  var loading = _loading[0]; var setLoading = _loading[1];
+
+    useEffect(function () {
+      apiGet("/admin-stats")
+        .then(function (d) { setData(d); setLoading(false); })
+        .catch(function ()  { setLoading(false); });
+    }, []);
+
+    if (loading) return React.createElement("div", {
+      style: { padding: "48px 0", textAlign: "center", color: "var(--t5)" }
+    }, React.createElement("i", { className: "fa-solid fa-spinner fa-spin" }));
+
+    if (!data) return React.createElement("div", {
+      style: { padding: "48px 0", textAlign: "center", color: "var(--t5)", fontSize: 13 }
+    }, "Failed to load stats.");
+
+    var t = data.totals || {};
+    var totalPublished = (t.images || 0) + (t.videos || 0) + (t.embeds || 0);
+
+    // Stat card helper
+    function StatCard(label, value, icon, color) {
+      return React.createElement("div", {
+        style: {
+          background: "var(--s1)", border: "0.5px solid var(--b1)",
+          borderRadius: 10, padding: "14px 16px",
+          display: "flex", alignItems: "center", gap: 12
+        }
+      },
+        React.createElement("div", {
+          style: {
+            width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+            background: color + "22",
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }
+        },
+          React.createElement("i", { className: "fa-solid " + icon, style: { fontSize: 15, color: color } })
+        ),
+        React.createElement("div", null,
+          React.createElement("div", { style: { fontSize: 20, fontWeight: 600, color: "var(--t1)", lineHeight: 1.1 } }, value),
+          React.createElement("div", { style: { fontSize: 11.5, color: "var(--t4)", marginTop: 2 } }, label)
+        )
+      );
+    }
+
+    // Daily uploads mini bar chart
+    var daily = data.daily_uploads || [];
+    var maxCount = daily.reduce(function (m, d) { return Math.max(m, d.count); }, 1);
+
+    function UploadChart() {
+      if (daily.length === 0) return React.createElement("div", {
+        style: { fontSize: 12, color: "var(--t5)", padding: "16px 0", textAlign: "center" }
+      }, "No upload activity in the last 30 days.");
+
+      return React.createElement("div", {
+        style: { display: "flex", alignItems: "flex-end", gap: 3, height: 60, marginTop: 8 }
+      },
+        daily.map(function (d, i) {
+          var h = Math.max(4, Math.round((d.count / maxCount) * 56));
+          var date = new Date(d.day);
+          var label = (date.getMonth() + 1) + "/" + date.getDate();
+          return React.createElement("div", {
+            key: i,
+            title: label + ": " + d.count + " upload" + (d.count === 1 ? "" : "s"),
+            style: {
+              flex: 1, height: h, borderRadius: "3px 3px 0 0",
+              background: "var(--ac)", minWidth: 4, cursor: "default",
+              opacity: 0.75
+            }
+          });
+        })
+      );
+    }
+
+    // Item row helper for most viewed / most commented
+    function ItemRow(item, sublabel) {
+      return React.createElement("div", {
+        key: item.id,
+        style: {
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "8px 0", borderBottom: "0.5px solid var(--b1)",
+          cursor: "pointer"
+        },
+        onClick: function () { NE.navigate("/ext/" + SLUG + "/" + item.id); }
+      },
+        React.createElement("div", {
+          style: { width: 48, height: 30, borderRadius: 4, background: "var(--s2)", overflow: "hidden", flexShrink: 0 }
+        },
+          (item.thumbnail_url || item.file_url) && React.createElement("img", {
+            src: item.thumbnail_url || item.file_url,
+            style: { width: "100%", height: "100%", objectFit: "cover", display: "block" }
+          })
+        ),
+        React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+          React.createElement("div", {
+            style: { fontSize: 12.5, color: "var(--t2)", fontWeight: 500,
+                     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }
+          }, item.title || "Untitled"),
+          React.createElement("div", { style: { fontSize: 11, color: "var(--t5)", marginTop: 1 } },
+            item.user ? item.user.username : ""
+          )
+        ),
+        React.createElement("div", { style: { fontSize: 12, color: "var(--t4)", flexShrink: 0 } }, sublabel)
+      );
+    }
+
+    return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 24 } },
+
+      // Stat cards grid
+      React.createElement("div", {
+        style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }
+      },
+        StatCard("Published",   totalPublished,    "fa-images",      "var(--ac)"),
+        StatCard("Images",      t.images || 0,     "fa-image",       "#7c5cfc"),
+        StatCard("Videos",      t.videos || 0,     "fa-film",        "#0ea5e9"),
+        StatCard("Embeds",      t.embeds || 0,     "fa-youtube",     "#ef4444"),
+        StatCard("Drafts",      t.drafts || 0,     "fa-pencil",      "var(--t4)"),
+        StatCard("Pending",     t.pending || 0,    "fa-clock",       "#f59e0b"),
+        StatCard("Collections", t.collections || 0,"fa-layer-group", "#10b981"),
+        StatCard("Comments",    t.comments || 0,   "fa-comment",     "#6366f1"),
+        StatCard("Ratings",     t.ratings || 0,    "fa-star",        "#f59e0b"),
+        StatCard("Reactions",   t.reactions || 0,  "fa-face-smile",  "#ec4899")
+      ),
+
+      // Upload activity chart
+      React.createElement("div", {
+        style: { background: "var(--s1)", border: "0.5px solid var(--b1)", borderRadius: 10, padding: "16px" }
+      },
+        React.createElement("div", { style: { fontSize: 13, fontWeight: 500, color: "var(--t2)", marginBottom: 4 } }, "Uploads — last 30 days"),
+        React.createElement(UploadChart)
+      ),
+
+      // Most viewed + most commented
+      React.createElement("div", {
+        style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }
+      },
+        // Most viewed
+        React.createElement("div", {
+          style: { background: "var(--s1)", border: "0.5px solid var(--b1)", borderRadius: 10, padding: 16 }
+        },
+          React.createElement("div", { style: { fontSize: 13, fontWeight: 500, color: "var(--t2)", marginBottom: 8 } }, "Most viewed"),
+          (data.most_viewed || []).length === 0
+            ? React.createElement("div", { style: { fontSize: 12, color: "var(--t5)", padding: "8px 0" } }, "No data yet.")
+            : (data.most_viewed || []).map(function (item) {
+                return ItemRow(item,
+                  React.createElement("span", null,
+                    React.createElement("i", { className: "fa-solid fa-eye", style: { marginRight: 4 } }),
+                    item.view_count || 0
+                  )
+                );
+              })
+        ),
+        // Most commented
+        React.createElement("div", {
+          style: { background: "var(--s1)", border: "0.5px solid var(--b1)", borderRadius: 10, padding: 16 }
+        },
+          React.createElement("div", { style: { fontSize: 13, fontWeight: 500, color: "var(--t2)", marginBottom: 8 } }, "Most commented"),
+          (data.most_commented || []).length === 0
+            ? React.createElement("div", { style: { fontSize: 12, color: "var(--t5)", padding: "8px 0" } }, "No data yet.")
+            : (data.most_commented || []).map(function (item) {
+                return ItemRow(item,
+                  React.createElement("span", null,
+                    React.createElement("i", { className: "fa-solid fa-comment", style: { marginRight: 4 } }),
+                    item.comment_count || 0
+                  )
+                );
+              })
+        )
       )
     );
   }

@@ -1461,6 +1461,98 @@ defmodule NexusGallery.ApiRouter do
     end)
   end
 
+
+  # -------------------------------------------------------------------------
+  # Admin stats
+  # -------------------------------------------------------------------------
+
+  get "/admin-stats" do
+    require_permission(conn, "can_manage_gallery", fn conn ->
+      import Ecto.Query
+
+      # Totals
+      total_images   = Nexus.Repo.aggregate(from(i in NexusGallery.Item, where: i.media_type == "image"  and i.is_draft == false and i.pending_approval == false), :count)
+      total_videos   = Nexus.Repo.aggregate(from(i in NexusGallery.Item, where: i.media_type == "video"  and i.is_draft == false and i.pending_approval == false), :count)
+      total_embeds   = Nexus.Repo.aggregate(from(i in NexusGallery.Item, where: i.media_type == "embed"  and i.is_draft == false and i.pending_approval == false), :count)
+      total_drafts   = Nexus.Repo.aggregate(from(i in NexusGallery.Item, where: i.is_draft == true and i.pending_approval == false), :count)
+      total_pending  = Nexus.Repo.aggregate(from(i in NexusGallery.Item, where: i.pending_approval == true), :count)
+      total_comments = Nexus.Repo.aggregate(from(c in "nexus_gallery_comments"), :count)
+      total_ratings  = Nexus.Repo.aggregate(from(r in "nexus_gallery_ratings"), :count)
+      total_reactions = Nexus.Repo.aggregate(from(r in "nexus_gallery_reactions"), :count)
+      total_collections = Nexus.Repo.aggregate(from(c in NexusGallery.Collection), :count)
+
+      # Uploads over last 30 days grouped by day
+      thirty_ago = DateTime.utc_now() |> DateTime.add(-30 * 86400, :second)
+      daily_uploads = Nexus.Repo.all(
+        from i in NexusGallery.Item,
+          where: i.is_draft == false
+            and i.pending_approval == false
+            and i.inserted_at >= ^thirty_ago,
+          group_by: fragment("date_trunc('day', ?)", i.inserted_at),
+          order_by: fragment("date_trunc('day', ?)", i.inserted_at),
+          select: %{
+            day:   fragment("date_trunc('day', ?)", i.inserted_at),
+            count: count(i.id)
+          }
+      )
+
+      # Most viewed items (top 5)
+      most_viewed = Nexus.Repo.all(
+        from i in NexusGallery.Item,
+          where: i.is_draft == false and i.pending_approval == false,
+          order_by: [desc: i.view_count],
+          limit: 5
+      ) |> NexusGallery.Items.enrich_list_public()
+        |> Enum.map(&widget_item_json/1)
+
+      # Most commented items (top 5)
+      comment_counts = Nexus.Repo.all(
+        from c in "nexus_gallery_comments",
+          where: c.subject_type == "item",
+          group_by: c.subject_id,
+          order_by: [desc: count(c.id)],
+          limit: 5,
+          select: {fragment("?::text", c.subject_id), count(c.id)}
+      )
+      most_commented =
+        if comment_counts == [] do []
+        else
+          ids = Enum.map(comment_counts, fn {id, _} -> id end)
+          count_map = Map.new(comment_counts)
+          Nexus.Repo.all(
+            from i in NexusGallery.Item,
+              where: fragment("?::text", i.id) in ^ids
+                and i.is_draft == false
+                and i.pending_approval == false
+          )
+          |> NexusGallery.Items.enrich_list_public()
+          |> Enum.sort_by(fn i -> Map.get(count_map, i.id, 0) end, :desc)
+          |> Enum.map(fn i ->
+            Map.put(widget_item_json(i), :comment_count, Map.get(count_map, i.id, 0))
+          end)
+        end
+
+      json_resp(conn, 200, %{
+        totals: %{
+          images:      total_images,
+          videos:      total_videos,
+          embeds:      total_embeds,
+          drafts:      total_drafts,
+          pending:     total_pending,
+          comments:    total_comments,
+          ratings:     total_ratings,
+          reactions:   total_reactions,
+          collections: total_collections
+        },
+        daily_uploads:  Enum.map(daily_uploads, fn d ->
+          %{day: d.day, count: d.count}
+        end),
+        most_viewed:    most_viewed,
+        most_commented: most_commented
+      })
+    end)
+  end
+
   # -------------------------------------------------------------------------
   # Catch-all
   # -------------------------------------------------------------------------
