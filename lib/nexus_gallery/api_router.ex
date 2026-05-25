@@ -1134,6 +1134,26 @@ defmodule NexusGallery.ApiRouter do
 
       events = []
 
+      # Followed items themselves — show the item as an entry
+      events = events ++ if item_ids == [] do [] else
+        Nexus.Repo.all(
+          Ecto.Query.from i in NexusGallery.Item,
+            where: fragment("?::text", i.id) in ^item_ids
+              and i.is_draft == false,
+            order_by: [desc: i.inserted_at],
+            limit: 50,
+            select: %{
+              type:        "followed_item",
+              subject_id:  fragment("?::text", i.id),
+              item_id:     fragment("?::text", i.id),
+              title:       i.title,
+              file_url:    i.file_url,
+              actor_id:    i.user_id,
+              occurred_at: i.inserted_at
+            }
+        )
+      end
+
       # New comments on followed items
       events = events ++ if item_ids == [] do [] else
         Nexus.Repo.all(

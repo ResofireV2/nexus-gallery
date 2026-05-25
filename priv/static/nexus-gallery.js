@@ -2481,11 +2481,13 @@
 
     return React.createElement("div", { style: { padding: "8px 0" } },
       events.map(function (e, i) {
-        var icon = e.type === "comment" ? "fa-comment"
-                 : e.type === "new_item" ? "fa-image"
+        var icon = e.type === "comment"       ? "fa-comment"
+                 : e.type === "new_item"     ? "fa-image"
+                 : e.type === "followed_item" ? "fa-image"
                  : "fa-layer-group";
-        var label = e.type === "comment"         ? "commented on an item you follow"
-                  : e.type === "new_item"        ? "posted a new image to a tag you follow"
+        var label = e.type === "comment"        ? "commented on an item you follow"
+                  : e.type === "new_item"       ? "posted a new image to a tag you follow"
+                  : e.type === "followed_item"  ? "uploaded an image you follow"
                   : "added an image to a collection you follow";
 
         return React.createElement("div", {
