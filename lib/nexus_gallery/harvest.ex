@@ -17,6 +17,75 @@ defmodule NexusGallery.Harvest do
   alias NexusGallery.Items
 
   @doc """
+  Called from handle_event for reply_created/reply_updated.
+  reply_id and post_id are integers. settings is the extension settings map.
+  """
+  def process_reply(reply_id, post_id, settings) do
+    require Logger
+    Logger.info("[nexus-gallery] harvest triggered for reply_id=#{inspect(reply_id)}")
+    unless parse_bool(settings["harvest_enabled"]) do
+      Logger.info("[nexus-gallery] harvest skipped — harvest_enabled is off")
+      :ok
+    else
+      # Space comes from the parent post
+      space_id = Repo.one(
+        from p in "posts",
+          where: p.id == ^post_id,
+          select: p.space_id
+      )
+      space_slug = if space_id, do: fetch_space_slug(space_id), else: nil
+      Logger.info("[nexus-gallery] harvest reply — space_slug=#{inspect(space_slug)}")
+      if is_nil(space_slug) do
+        :ok
+      else
+        mappings = fetch_mappings_for_slugs([space_slug])
+        Logger.info("[nexus-gallery] harvest reply — mappings found=#{length(mappings)}")
+        if mappings == [] do
+          :ok
+        else
+          reply = fetch_reply(reply_id)
+          if is_nil(reply) do
+            Logger.info("[nexus-gallery] harvest reply — reply #{inspect(reply_id)} not found or hidden")
+            :ok
+          else
+            image_urls = extract_image_urls(reply.body)
+            Logger.info("[nexus-gallery] harvest reply — image_urls found=#{inspect(image_urls)}")
+            if image_urls == [] do
+              :ok
+            else
+              gallery_tag_ids =
+                mappings |> Enum.map(& &1.gallery_tag_id_str) |> Enum.uniq()
+
+              Enum.each(image_urls, fn url ->
+                already = Items.harvested_reply?(reply_id, url)
+                Logger.info("[nexus-gallery] harvest reply — url=#{inspect(url)} already_harvested=#{already}")
+                unless already do
+                  case Items.harvest_item(%{
+                    user_id:         reply.user_id,
+                    media_type:      "image",
+                    title:           nil,
+                    file_url:        url,
+                    original_url:    url,
+                    is_draft:        false,
+                    source_reply_id: reply_id
+                  }) do
+                    {:ok, item} ->
+                      Logger.info("[nexus-gallery] harvest reply — created item #{inspect(item.id)}")
+                      Items.set_tags(item.id, gallery_tag_ids)
+                    {:error, reason} ->
+                      Logger.warning("[nexus-gallery] harvest_item failed for reply #{reply_id}: #{inspect(reason)}")
+                  end
+                end
+              end)
+              :ok
+            end
+          end
+        end
+      end
+    end
+  end
+
+  @doc """
   Called from handle_event. Processes a post for harvestable images.
   post_id is an integer. settings is the extension settings map.
   """
@@ -104,6 +173,14 @@ defmodule NexusGallery.Harvest do
       from p in "posts",
         where: p.id == ^post_id and p.hidden == false,
         select: %{id: p.id, user_id: p.user_id, title: p.title, body: p.body, space_id: p.space_id}
+    )
+  end
+
+  defp fetch_reply(reply_id) do
+    Repo.one(
+      from r in "replies",
+        where: r.id == ^reply_id and r.hidden == false,
+        select: %{id: r.id, user_id: r.user_id, body: r.body}
     )
   end
 

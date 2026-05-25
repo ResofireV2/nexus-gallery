@@ -21,7 +21,8 @@ defmodule NexusGallery.Item do
     field :width,          :integer
     field :height,         :integer
     field :upload_id,      :binary_id
-    field :source_post_id, :integer
+    field :source_post_id,  :integer
+    field :source_reply_id, :integer
     timestamps(type: :utc_datetime)
   end
 
@@ -49,8 +50,8 @@ defmodule NexusGallery.Item do
     item
     |> cast(attrs, [:user_id, :media_type, :title, :description,
                     :file_url, :original_url, :thumbnail_url,
-                    :width, :height, :is_draft, :source_post_id])
-    |> validate_required([:user_id, :media_type, :file_url, :source_post_id])
+                    :width, :height, :is_draft, :source_post_id, :source_reply_id])
+    |> validate_required([:user_id, :media_type, :file_url])
     |> validate_inclusion(:media_type, @valid_media_types)
     |> validate_length(:title, max: 200)
   end

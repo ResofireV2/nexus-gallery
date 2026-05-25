@@ -22,6 +22,7 @@ defmodule NexusGallery do
       NexusGallery.Migrations.V20260601000010CreateGalleryReactions,
       NexusGallery.Migrations.V20260601000011CreateGalleryHarvestMappings,
       NexusGallery.Migrations.V20260601000012FixUserIdTypes,
+      NexusGallery.Migrations.V20260601000013AddSourceReplyId,
     ]
   end
 
@@ -47,6 +48,10 @@ defmodule NexusGallery do
   end
   def handle_event("post_updated", %{post_id: post_id}, settings) do
     NexusGallery.Harvest.process_post(post_id, settings)
+    :ok
+  end
+  def handle_event("reply_created", %{reply_id: reply_id, post_id: post_id}, settings) do
+    NexusGallery.Harvest.process_reply(reply_id, post_id, settings)
     :ok
   end
   def handle_event(_event, _payload, _settings), do: :ok

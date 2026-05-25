@@ -346,6 +346,17 @@ defmodule NexusGallery.Items do
     ) > 0
   end
 
+  @doc "Returns true if a published item already exists for this source_reply_id + file_url."
+  def harvested_reply?(source_reply_id, file_url) do
+    Repo.aggregate(
+      from(i in Item,
+        where: i.source_reply_id == ^source_reply_id
+          and i.file_url == ^file_url
+          and i.is_draft == false),
+      :count
+    ) > 0
+  end
+
   def set_tags(item_id, tag_ids) do
     # Repo.insert_all with a string table has no schema type info — Postgrex
     # receives raw values and its uuid encoder requires 16-byte binaries.
