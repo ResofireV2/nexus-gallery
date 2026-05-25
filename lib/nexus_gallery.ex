@@ -21,6 +21,7 @@ defmodule NexusGallery do
       NexusGallery.Migrations.V20260601000009CreateGallerySubscriptions,
       NexusGallery.Migrations.V20260601000010CreateGalleryReactions,
       NexusGallery.Migrations.V20260601000011CreateGalleryHarvestMappings,
+      NexusGallery.Migrations.V20260601000012FixUserIdTypes,
     ]
   end
 
