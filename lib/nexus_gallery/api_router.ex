@@ -1197,11 +1197,10 @@ defmodule NexusGallery.ApiRouter do
         )
       end
 
-      # Sort all events by occurred_at desc, paginate
-      sorted = events
-        |> Enum.sort_by(& &1.occurred_at, {:desc, DateTime})
-        |> Enum.drop(offset)
-        |> Enum.take(per)
+      # Sort all events by occurred_at desc, then paginate
+      all_sorted = Enum.sort_by(events, & &1.occurred_at, {:desc, NaiveDateTime})
+      total      = length(all_sorted)
+      sorted     = all_sorted |> Enum.drop(offset) |> Enum.take(per)
 
       # Batch-load actor user info
       actor_ids = sorted |> Enum.map(& &1.actor_id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
@@ -1217,7 +1216,6 @@ defmodule NexusGallery.ApiRouter do
         Map.put(e, :actor, Map.get(actors, e.actor_id))
       end)
 
-      total = length(events)
       json_resp(conn, 200, %{
         events:      enriched,
         total:       total,
