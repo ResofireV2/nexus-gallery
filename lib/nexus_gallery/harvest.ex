@@ -3,8 +3,8 @@ defmodule NexusGallery.Harvest do
   Handles harvesting images from forum posts into the gallery.
 
   When a post is created or updated, this module:
-  1. Fetches the post body and its forum tag slugs from the DB.
-  2. Checks which forum tag slugs have harvest mappings to gallery tags.
+  1. Fetches the post body and space from the DB.
+  2. Checks if the post's space slug has a harvest mapping to a gallery tag.
   3. Extracts /uploads/posts/ image URLs from the post body.
   4. For each image URL not already harvested from this post, creates a
      published gallery item owned by the post's original author.
@@ -36,15 +36,13 @@ defmodule NexusGallery.Harvest do
   # ---------------------------------------------------------------------------
 
   defp do_harvest(post, _settings) do
-    # Get forum tag slugs + space slug on this post
-    forum_slugs = fetch_forum_tag_slugs(post.id)
-    space_slug  = if post.space_id, do: fetch_space_slug(post.space_id), else: nil
-    all_slugs   = (forum_slugs ++ List.wrap(space_slug)) |> Enum.reject(&is_nil/1) |> Enum.uniq()
-    if all_slugs == [] do
+    # Get the post's space slug — harvest is space-based only
+    space_slug = if post.space_id, do: fetch_space_slug(post.space_id), else: nil
+    if is_nil(space_slug) do
       :ok
     else
-      # Find harvest mappings for these slugs (tags and/or spaces)
-      mappings = fetch_mappings_for_slugs(all_slugs)
+      # Find harvest mappings for this space slug
+      mappings = fetch_mappings_for_slugs([space_slug])
       if mappings == [] do
         :ok
       else
@@ -90,15 +88,6 @@ defmodule NexusGallery.Harvest do
       from p in "posts",
         where: p.id == ^post_id and p.hidden == false,
         select: %{id: p.id, user_id: p.user_id, title: p.title, body: p.body, space_id: p.space_id}
-    )
-  end
-
-  defp fetch_forum_tag_slugs(post_id) do
-    Repo.all(
-      from pt in "post_tags",
-        join: t in "tags", on: t.id == pt.tag_id,
-        where: pt.post_id == ^post_id,
-        select: fragment("?::text", t.slug)
     )
   end
 

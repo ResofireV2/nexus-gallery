@@ -2863,7 +2863,7 @@
           "Tag mappings"
         ),
         React.createElement("div", { style: { fontSize: 12, color: "var(--t5)", marginBottom: 12 } },
-          "When a post is made in a matching space, or tagged with a matching forum tag, its images are automatically imported into the linked gallery tag. Enter either a space slug (e.g. \"general\") or a forum tag slug."
+          "When a post is made in a mapped space, its images are automatically imported into the linked gallery tag. Enter the space slug (e.g. \"general\")."
         ),
         mappings && mappings.length === 0 && React.createElement("div", {
           style: { fontSize: 13, color: "var(--t5)", padding: "16px 0" }
@@ -2898,11 +2898,11 @@
         React.createElement("div", { style: { fontSize: 13, fontWeight: 500, color: "var(--t2)", marginBottom: 12 } }, "Add mapping"),
         React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" } },
           React.createElement("div", { style: { flex: 1, minWidth: 160 } },
-            React.createElement("label", { style: labelStyle }, "Forum tag slug"),
+            React.createElement("label", { style: labelStyle }, "Space slug"),
             React.createElement("input", {
               style: Object.assign({}, inputStyle, { width: "100%", boxSizing: "border-box" }),
               value: newSlug,
-              placeholder: "e.g. general (space) or screenshots (tag)",
+              placeholder: "e.g. general",
               onChange: function (e) { setNewSlug(e.target.value); }
             })
           ),
