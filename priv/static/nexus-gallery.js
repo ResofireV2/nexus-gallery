@@ -783,12 +783,33 @@
     var inputStyle = { width: "100%", padding: "10px 14px", background: "rgba(255,255,255,0.05)", border: "0.5px solid var(--b2)", borderRadius: 10, color: "var(--t1)", fontSize: 14, outline: "none", fontFamily: "inherit" };
 
     return React.createElement("div", { style: { padding: "24px 0", maxWidth: 640 } },
-      item.file_url && React.createElement("div", { style: { marginBottom: 24, borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "var(--s2)" } },
-        React.createElement("img", { src: item.file_url, style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } })
+      React.createElement("div", { style: { marginBottom: 24, borderRadius: 10, overflow: "hidden", aspectRatio: "16/9", background: "var(--s2)" } },
+        item.media_type === "video" && (item.thumbnail_url
+          ? React.createElement("img", { src: item.thumbnail_url, style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } })
+          : React.createElement("div", { style: { width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10 } },
+              React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 64 64", width: "48", height: "48" },
+                React.createElement("rect", { x: "4", y: "10", width: "56", height: "44", rx: "6", fill: "none", stroke: "var(--t5)", strokeWidth: "2.5" }),
+                React.createElement("polygon", { points: "25,22 25,42 44,32", fill: "var(--t5)" }),
+                React.createElement("line", { x1: "4", y1: "18", x2: "60", y2: "18", stroke: "var(--t5)", strokeWidth: "2" }),
+                React.createElement("line", { x1: "4", y1: "46", x2: "60", y2: "46", stroke: "var(--t5)", strokeWidth: "2" }),
+                React.createElement("line", { x1: "14", y1: "10", x2: "14", y2: "18", stroke: "var(--t5)", strokeWidth: "2" }),
+                React.createElement("line", { x1: "26", y1: "10", x2: "26", y2: "18", stroke: "var(--t5)", strokeWidth: "2" }),
+                React.createElement("line", { x1: "38", y1: "10", x2: "38", y2: "18", stroke: "var(--t5)", strokeWidth: "2" }),
+                React.createElement("line", { x1: "50", y1: "10", x2: "50", y2: "18", stroke: "var(--t5)", strokeWidth: "2" }),
+                React.createElement("line", { x1: "14", y1: "46", x2: "14", y2: "54", stroke: "var(--t5)", strokeWidth: "2" }),
+                React.createElement("line", { x1: "26", y1: "46", x2: "26", y2: "54", stroke: "var(--t5)", strokeWidth: "2" }),
+                React.createElement("line", { x1: "38", y1: "46", x2: "38", y2: "54", stroke: "var(--t5)", strokeWidth: "2" }),
+                React.createElement("line", { x1: "50", y1: "46", x2: "50", y2: "54", stroke: "var(--t5)", strokeWidth: "2" })
+              ),
+              React.createElement("div", { style: { fontSize: 12, color: "var(--t5)" } }, "Video — thumbnail will appear after publishing")
+            )
+        ),
+        item.media_type !== "video" && item.file_url &&
+          React.createElement("img", { src: item.file_url, style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } })
       ),
       React.createElement("div", { style: { marginBottom: 18 } },
         React.createElement("label", { style: labelStyle }, "Title"),
-        React.createElement("input", { style: inputStyle, value: form.title, placeholder: "Give your image a title", onChange: function (e) { setForm(function (p) { return Object.assign({}, p, { title: e.target.value }); }); } })
+        React.createElement("input", { style: inputStyle, value: form.title, placeholder: item.media_type === "video" ? "Give your video a title" : "Give your image a title", onChange: function (e) { setForm(function (p) { return Object.assign({}, p, { title: e.target.value }); }); } })
       ),
       React.createElement("div", { style: { marginBottom: 18 } },
         React.createElement("label", { style: labelStyle }, "Description"),
