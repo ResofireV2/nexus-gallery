@@ -228,9 +228,9 @@ defmodule NexusGallery.ApiRouter do
   end
 
   get "/items/:id" do
-    require_permission(conn, "can_view_gallery", fn conn ->
-      user = conn.assigns[:current_user]
-      try do
+    try do
+      require_permission(conn, "can_view_gallery", fn conn ->
+        user = conn.assigns[:current_user]
         case Items.get_item_with_tags(conn.params["id"]) do
           nil  -> json_resp(conn, 404, %{error: "Item not found"})
           item ->
@@ -241,10 +241,10 @@ defmodule NexusGallery.ApiRouter do
               json_resp(conn, 200, %{item: item_json(item, user)})
             end
         end
-      rescue
-        e -> json_resp(conn, 500, %{error: Exception.message(e), type: inspect(e.__struct__)})
-      end
-    end)
+      end)
+    rescue
+      e -> json_resp(conn, 500, %{error: inspect(e)})
+    end
   end
 
   patch "/items/:id" do
