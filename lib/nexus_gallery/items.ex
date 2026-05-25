@@ -57,12 +57,12 @@ defmodule NexusGallery.Items do
 
   @doc "Returns a single item struct by id, or nil."
   def get_item(id) do
-    Repo.one(from i in Item, where: fragment("? = ?::uuid", i.id, ^id))
+    Repo.one(from i in Item, where: fragment("? = ?::uuid", i.id, type(^id, :string)))
   end
 
   @doc "Returns item as a plain map with tags and user, or nil."
   def get_item_with_tags(id) do
-    case Repo.one(from i in Item, where: fragment("? = ?::uuid", i.id, ^id)) do
+    case Repo.one(from i in Item, where: fragment("? = ?::uuid", i.id, type(^id, :string))) do
       nil  -> nil
       item ->
         m = to_map(item)
@@ -181,7 +181,7 @@ defmodule NexusGallery.Items do
   defp fetch_tags(item_id) do
     tag_ids =
       from(it in "nexus_gallery_item_tags",
-        where: it.item_id == ^item_id,
+        where: fragment("? = ?::uuid", it.item_id, type(^item_id, :string)),
         select: type(it.tag_id, :binary_id))
       |> Repo.all()
 
