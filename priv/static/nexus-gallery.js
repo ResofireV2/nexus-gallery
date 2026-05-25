@@ -672,6 +672,11 @@
     var _reactions = useState({ counts: {}, mine: [] });
     var reactions  = _reactions[0]; var setReactions = _reactions[1];
     var _perms    = useState({});   var perms      = _perms[0];    var setPerms    = _perms[1];
+    var _comments     = useState([]);   var comments     = _comments[0];     var setComments     = _comments[1];
+    var _commentTotal = useState(0);    var commentTotal = _commentTotal[0]; var setCommentTotal = _commentTotal[1];
+    var _commentPage  = useState(1);    var commentPage  = _commentPage[0];  var setCommentPage  = _commentPage[1];
+    var _commentBody  = useState("");   var commentBody  = _commentBody[0];  var setCommentBody  = _commentBody[1];
+    var _commenting   = useState(false);var commenting   = _commenting[0];   var setCommenting   = _commenting[1];
 
     useEffect(function () {
       Promise.all([
@@ -680,6 +685,7 @@
         apiGet("/items/" + uuid + "/ratings"),
         apiGet("/items/" + uuid + "/reactions"),
         apiGet("/permissions"),
+        apiGet("/items/" + uuid + "/comments?page=1"),
       ]).then(function (results) {
         if (results[0].item) {
           var i = results[0].item;
@@ -694,6 +700,10 @@
         if (results[2] && typeof results[2].count === "number") setRating(results[2]);
         if (results[3] && results[3].counts) setReactions(results[3]);
         if (results[4] && results[4].permissions) setPerms(results[4]);
+        if (results[5] && results[5].comments) {
+          setComments(results[5].comments);
+          setCommentTotal(results[5].total || 0);
+        }
         setLoading(false);
       }).catch(function () { setLoading(false); });
     }, [uuid]);
@@ -763,6 +773,49 @@
           if (d.counts) setReactions(d);
         })
         .catch(function () { toast("Failed to react", "err"); });
+    }
+
+    function loadComments(page) {
+      apiGet("/items/" + uuid + "/comments?page=" + page)
+        .then(function (d) {
+          if (d.comments) {
+            setComments(d.comments);
+            setCommentTotal(d.total || 0);
+            setCommentPage(page);
+          }
+        })
+        .catch(function () {});
+    }
+
+    function handleComment() {
+      if (!commentBody.trim()) return;
+      setCommenting(true);
+      apiPost("/items/" + uuid + "/comments", { body: commentBody })
+        .then(function (d) {
+          if (d.comment) {
+            setComments(function (prev) { return prev.concat([d.comment]); });
+            setCommentTotal(function (n) { return n + 1; });
+            setCommentBody("");
+          } else {
+            toast(d.error || "Failed to post comment", "err");
+          }
+        })
+        .catch(function () { toast("Failed to post comment", "err"); })
+        .finally(function () { setCommenting(false); });
+    }
+
+    function handleDeleteComment(commentId) {
+      if (!window.confirm("Delete this comment?")) return;
+      apiDelete("/items/" + uuid + "/comments/" + commentId)
+        .then(function (d) {
+          if (d.ok) {
+            setComments(function (prev) { return prev.filter(function (c) { return c.id !== commentId; }); });
+            setCommentTotal(function (n) { return n - 1; });
+          } else {
+            toast(d.error || "Failed to delete", "err");
+          }
+        })
+        .catch(function () { toast("Failed to delete", "err"); });
     }
 
     function handleOpenLightbox() {
@@ -995,6 +1048,119 @@
                     !(perms.block_self_reactions && item && currentUser && item.user_id === currentUser.id))
                     ? handleReact : null,
         })
+      ),
+
+      // ── Comments ──────────────────────────────────────────────────────────────
+
+      !editing && (perms.comments_enabled === true) && React.createElement("div", {
+        style: { marginTop: 24, paddingTop: 20, borderTop: "0.5px solid var(--b1)" }
+      },
+        // Section header
+        React.createElement("div", {
+          style: { fontSize: 13, fontWeight: 500, color: "var(--t3)", marginBottom: 16 }
+        },
+          React.createElement("i", { className: "fa-solid fa-comment", style: { marginRight: 7, fontSize: 12 } }),
+          commentTotal + (commentTotal === 1 ? " comment" : " comments")
+        ),
+
+        // Comment input — only for users with can_comment permission
+        perms.permissions && perms.permissions.can_comment && React.createElement("div", {
+          style: { display: "flex", gap: 10, marginBottom: 20, alignItems: "flex-start" }
+        },
+          currentUser && React.createElement(Av, { user: currentUser, size: 28 }),
+          React.createElement("div", { style: { flex: 1 } },
+            React.createElement("textarea", {
+              value: commentBody,
+              placeholder: "Write a comment…",
+              rows: 3,
+              style: {
+                width: "100%", padding: "10px 14px",
+                background: "rgba(255,255,255,0.05)",
+                border: "0.5px solid var(--b2)",
+                borderRadius: 10, color: "var(--t1)",
+                fontSize: 14, outline: "none",
+                fontFamily: "inherit", resize: "vertical",
+                minHeight: 70,
+              },
+              onChange: function (e) { setCommentBody(e.target.value); },
+              onKeyDown: function (e) {
+                // Ctrl+Enter or Cmd+Enter submits
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  handleComment();
+                }
+              },
+            }),
+            React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 6 } },
+              React.createElement("button", {
+                className: "btn-primary",
+                style: { fontSize: 12.5, padding: "6px 14px" },
+                onClick: handleComment,
+                disabled: commenting || !commentBody.trim(),
+              }, commenting ? "Posting…" : "Post comment")
+            )
+          )
+        ),
+
+        // Comment list
+        comments.length === 0 && React.createElement("div", {
+          style: { fontSize: 13, color: "var(--t5)", padding: "12px 0" }
+        }, "No comments yet. Be the first!"),
+
+        React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 14 } },
+          comments.map(function (c) {
+            return React.createElement("div", {
+              key: c.id,
+              style: {
+                display: "flex", gap: 10, alignItems: "flex-start",
+                padding: "12px 14px",
+                background: "var(--s2)",
+                borderRadius: 10,
+                border: "0.5px solid var(--b1)",
+              }
+            },
+              c.user && React.createElement(Av, { user: c.user, size: 28 }),
+              React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+                React.createElement("div", {
+                  style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }
+                },
+                  c.user && React.createElement("span", {
+                    style: { fontSize: 13, fontWeight: 500, color: "var(--t2)" }
+                  }, c.user.username),
+                  React.createElement("span", {
+                    style: { fontSize: 11.5, color: "var(--t5)" }
+                  }, c.inserted_at ? new Date(c.inserted_at).toLocaleDateString() : ""),
+                  c.can_delete && React.createElement("button", {
+                    onClick: function () { handleDeleteComment(c.id); },
+                    style: {
+                      marginLeft: "auto", background: "none", border: "none",
+                      color: "var(--t5)", cursor: "pointer", fontSize: 11,
+                      padding: "2px 6px", borderRadius: 4,
+                    }
+                  }, React.createElement("i", { className: "fa-solid fa-trash" }))
+                ),
+                React.createElement(Md, { text: c.body })
+              )
+            );
+          })
+        ),
+
+        // Pagination
+        commentTotal > 20 && React.createElement("div", {
+          style: { display: "flex", justifyContent: "center", gap: 6, marginTop: 16 }
+        },
+          commentPage > 1 && React.createElement("button", {
+            className: "btn-ghost", style: { fontSize: 12 },
+            onClick: function () { loadComments(commentPage - 1); }
+          }, React.createElement("i", { className: "fa-solid fa-chevron-left" })),
+          React.createElement("span", {
+            style: { fontSize: 12.5, color: "var(--t4)", padding: "6px 10px" }
+          }, "Page " + commentPage + " of " + Math.ceil(commentTotal / 20)),
+          commentPage < Math.ceil(commentTotal / 20) && React.createElement("button", {
+            className: "btn-ghost", style: { fontSize: 12 },
+            onClick: function () { loadComments(commentPage + 1); }
+          }, React.createElement("i", { className: "fa-solid fa-chevron-right" }))
+        )
       ),
 
       // ── Edit form (inline) ─────────────────────────────────────────────────

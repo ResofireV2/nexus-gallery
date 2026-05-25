@@ -94,7 +94,8 @@ defmodule NexusGallery.ApiRouter do
       ratings_enabled:       s["ratings_enabled"] == true,
       reactions_enabled:     s["reactions_enabled"] == true,
       block_self_ratings:    s["block_self_ratings"] == true,
-      block_self_reactions:  s["block_self_reactions"] == true
+      block_self_reactions:  s["block_self_reactions"] == true,
+      comments_enabled:      s["comments_enabled"] == true
     })
   end
 
@@ -577,6 +578,145 @@ defmodule NexusGallery.ApiRouter do
           :error ->
             json_resp(conn, 404, %{error: "Item not found"})
         end
+      end
+    end)
+  end
+
+
+  # -------------------------------------------------------------------------
+  # Comments
+  # -------------------------------------------------------------------------
+
+  get "/items/:id/comments" do
+    require_permission(conn, "can_view_gallery", fn conn ->
+      user = conn.assigns[:current_user]
+      item_id_str = conn.params["id"]
+      page     = parse_int(conn.query_params["page"], 1) |> max(1)
+      per_page = 20
+      offset   = (page - 1) * per_page
+
+      case Ecto.UUID.dump(item_id_str) do
+        {:ok, id_bin} ->
+          total = Nexus.Repo.aggregate(
+            Ecto.Query.from(c in "nexus_gallery_comments",
+              where: c.subject_type == "item" and c.subject_id == ^id_bin),
+            :count, :id
+          )
+          rows = Nexus.Repo.all(
+            Ecto.Query.from c in "nexus_gallery_comments",
+              where: c.subject_type == "item" and c.subject_id == ^id_bin,
+              order_by: [asc: c.inserted_at],
+              limit:  ^per_page,
+              offset: ^offset,
+              select: %{
+                id:          fragment("?::text", c.id),
+                user_id:     c.user_id,
+                body:        c.body,
+                inserted_at: c.inserted_at
+              }
+          )
+          user_ids = rows |> Enum.map(& &1.user_id) |> Enum.uniq()
+          users =
+            if user_ids == [] do
+              %{}
+            else
+              Nexus.Repo.all(
+                Ecto.Query.from u in "users",
+                  where: u.id in ^user_ids,
+                  select: %{
+                    id:         u.id,
+                    username:   fragment("?::text", u.username),
+                    avatar_url: u.avatar_url
+                  }
+              ) |> Map.new(fn u -> {u.id, u} end)
+            end
+          comments = Enum.map(rows, fn c ->
+            can_delete = user != nil and (
+              user.id == c.user_id or user.role in ["admin", "moderator"]
+            )
+            c
+            |> Map.put(:user, Map.get(users, c.user_id))
+            |> Map.put(:can_delete, can_delete)
+          end)
+          json_resp(conn, 200, %{
+            comments:    comments,
+            total:       total,
+            page:        page,
+            total_pages: ceil(total / per_page)
+          })
+        :error ->
+          json_resp(conn, 404, %{error: "Item not found"})
+      end
+    end)
+  end
+
+  post "/items/:id/comments" do
+    require_permission(conn, "can_comment", fn conn ->
+      user = conn.assigns.current_user
+      item_id_str = conn.params["id"]
+      body = conn.body_params["body"]
+
+      cond do
+        is_nil(body) or String.trim(body) == "" ->
+          json_resp(conn, 422, %{error: "Comment body cannot be blank"})
+        String.length(body) > 10_000 ->
+          json_resp(conn, 422, %{error: "Comment is too long (max 10,000 characters)"})
+        true ->
+          case Ecto.UUID.dump(item_id_str) do
+            {:ok, id_bin} ->
+              {:ok, comment_id_bin} = Ecto.UUID.dump(Ecto.UUID.generate())
+              now = DateTime.utc_now() |> DateTime.truncate(:second)
+              Nexus.Repo.insert_all("nexus_gallery_comments", [%{
+                id:           comment_id_bin,
+                user_id:      user.id,
+                subject_type: "item",
+                subject_id:   id_bin,
+                body:         String.trim(body),
+                inserted_at:  now,
+                updated_at:   now
+              }])
+              comment_id_str = Ecto.UUID.load!(comment_id_bin)
+              user_map = %{id: user.id, username: user.username, avatar_url: user.avatar_url}
+              json_resp(conn, 201, %{comment: %{
+                id:          comment_id_str,
+                user_id:     user.id,
+                user:        user_map,
+                body:        String.trim(body),
+                inserted_at: now,
+                can_delete:  true
+              }})
+            :error ->
+              json_resp(conn, 404, %{error: "Item not found"})
+          end
+      end
+    end)
+  end
+
+  delete "/items/:id/comments/:comment_id" do
+    require_auth(conn, fn conn ->
+      user = conn.assigns.current_user
+      comment_id_str = conn.params["comment_id"]
+      case Ecto.UUID.dump(comment_id_str) do
+        {:ok, comment_id_bin} ->
+          comment_owner = Nexus.Repo.one(
+            Ecto.Query.from c in "nexus_gallery_comments",
+              where: c.id == ^comment_id_bin,
+              select: c.user_id
+          )
+          cond do
+            is_nil(comment_owner) ->
+              json_resp(conn, 404, %{error: "Comment not found"})
+            comment_owner != user.id and user.role not in ["admin", "moderator"] ->
+              json_resp(conn, 403, %{error: "Access denied"})
+            true ->
+              Nexus.Repo.delete_all(
+                Ecto.Query.from c in "nexus_gallery_comments",
+                  where: c.id == ^comment_id_bin
+              )
+              json_resp(conn, 200, %{ok: true})
+          end
+        :error ->
+          json_resp(conn, 404, %{error: "Comment not found"})
       end
     end)
   end
