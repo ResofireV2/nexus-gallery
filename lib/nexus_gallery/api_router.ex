@@ -666,12 +666,16 @@ defmodule NexusGallery.ApiRouter do
     result = Nexus.Repo.one(
       from r in "nexus_gallery_ratings",
         where: r.subject_type == ^subject_type and r.subject_id == ^subject_id_bin,
-        select: %{count: count(r.id), avg: avg(r.value)}
+        select: %{count: count(r.id), avg: fragment("ROUND(AVG(?)::numeric, 1)", r.value)}
     )
     count = result[:count] || 0
-    avg   = result[:avg]
-    avg_f = if avg, do: Float.round(avg / 1.0, 1), else: nil
-    %{count: count, avg: avg_f}
+    avg   = case result[:avg] do
+      nil -> nil
+      %Decimal{} = d -> Decimal.to_float(d)
+      f when is_float(f) -> Float.round(f, 1)
+      other -> other
+    end
+    %{count: count, avg: avg}
   end
 
   defp reaction_counts(subject_id_bin, subject_type) do
