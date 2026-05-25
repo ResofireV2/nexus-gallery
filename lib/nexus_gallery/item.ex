@@ -23,6 +23,7 @@ defmodule NexusGallery.Item do
     field :upload_id,      :binary_id
     field :source_post_id,  :integer
     field :source_reply_id, :integer
+    field :pending_approval, :boolean, default: false
     timestamps(type: :utc_datetime)
   end
 
@@ -40,7 +41,7 @@ defmodule NexusGallery.Item do
 
   def publish_changeset(item, attrs) do
     item
-    |> cast(attrs, [:title, :description, :is_draft, :embed_url,
+    |> cast(attrs, [:title, :description, :is_draft, :pending_approval, :embed_url,
                     :file_url, :original_url, :thumbnail_url,
                     :width, :height, :upload_id])
     |> validate_length(:title, max: 200)

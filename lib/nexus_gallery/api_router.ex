@@ -305,6 +305,21 @@ defmodule NexusGallery.ApiRouter do
                 end
               end).()
 
+            # If moderation queue is enabled and a non-admin is trying to publish,
+            # intercept: set pending_approval=true and keep is_draft=true.
+            is_admin_or_mod = user.role in ["admin", "moderator"]
+            wants_publish  = Map.get(attrs, "is_draft") == false
+            queue_enabled  = parse_bool(s["moderation_queue_enabled"], false)
+
+            attrs =
+              if queue_enabled and wants_publish and not is_admin_or_mod do
+                attrs
+                |> Map.put("is_draft", true)
+                |> Map.put("pending_approval", true)
+              else
+                attrs
+              end
+
             case Items.update_and_publish(item, attrs, tag_ids_validated) do
               {:ok, updated} ->
                 # If item just got published, notify tag subscribers (async)
@@ -1381,6 +1396,67 @@ defmodule NexusGallery.ApiRouter do
           json_resp(conn, 200, %{ok: true})
         :error ->
           json_resp(conn, 404, %{error: "Not found"})
+      end
+    end)
+  end
+
+
+  # -------------------------------------------------------------------------
+  # Moderation queue
+  # -------------------------------------------------------------------------
+
+  get "/queue" do
+    require_permission(conn, "can_manage_gallery", fn conn ->
+      params   = conn.query_params
+      page     = parse_int(params["page"], 1) |> max(1)
+      per      = 20
+      offset   = (page - 1) * per
+
+      {items, total} = NexusGallery.Items.list_items([
+        page:     page,
+        per_page: per,
+        queue:    true
+      ])
+
+      json_resp(conn, 200, %{
+        items:       Enum.map(items, &item_json(&1, nil)),
+        total:       total,
+        page:        page,
+        total_pages: ceil(max(total, 1) / per)
+      })
+    end)
+  end
+
+  post "/queue/:id/approve" do
+    require_permission(conn, "can_manage_gallery", fn conn ->
+      item_id = conn.params["id"]
+      case NexusGallery.Items.get_item(item_id) do
+        nil  -> json_resp(conn, 404, %{error: "Item not found"})
+        item ->
+          unless item.pending_approval do
+            json_resp(conn, 422, %{error: "Item is not pending approval"})
+          else
+            case NexusGallery.Items.update_and_publish(item, %{"is_draft" => false, "pending_approval" => false}, nil) do
+              {:ok, updated} -> json_resp(conn, 200, %{item: item_json(updated, nil)})
+              {:error, cs}   -> json_resp(conn, 422, %{errors: format_errors(cs)})
+            end
+          end
+      end
+    end)
+  end
+
+  post "/queue/:id/reject" do
+    require_permission(conn, "can_manage_gallery", fn conn ->
+      item_id = conn.params["id"]
+      case NexusGallery.Items.get_item(item_id) do
+        nil  -> json_resp(conn, 404, %{error: "Item not found"})
+        item ->
+          unless item.pending_approval do
+            json_resp(conn, 422, %{error: "Item is not pending approval"})
+          else
+            NexusGallery.Items.delete_item(item)
+            json_resp(conn, 200, %{ok: true})
+          end
       end
     end)
   end

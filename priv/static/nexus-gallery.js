@@ -768,8 +768,14 @@
       apiPatch("/items/" + uuid, Object.assign({}, form, { is_draft: isDraft }))
         .then(function (d) {
           if (d.item) {
-            toast(isDraft ? "Saved as draft" : "Published!");
-            if (!isDraft) NE.navigate("/ext/" + SLUG + "/" + uuid);
+            if (!isDraft && d.item.pending_approval) {
+              // Moderation queue is enabled — item is awaiting review
+              toast("Submitted for review. An admin will approve your item shortly.");
+              NE.navigate("/ext/" + SLUG);
+            } else {
+              toast(isDraft ? "Saved as draft" : "Published!");
+              if (!isDraft) NE.navigate("/ext/" + SLUG + "/" + uuid);
+            }
           } else {
             toast(d.error || "Failed to save", "err");
           }
@@ -2619,7 +2625,7 @@
           ] });
         } },
         { key: "tags",    label: "Tags",    icon: "fa-tag",       render: function () { return React.createElement(TagsTab); } },
-        { key: "queue",   label: "Queue",   icon: "fa-clock",     render: function () { return React.createElement(ComingSoonTab, { label: "Moderation queue" }); } },
+        { key: "queue",   label: "Queue",   icon: "fa-clock",     render: function () { return React.createElement(QueueTab); } },
         { key: "harvest", label: "Harvest", icon: "fa-seedling",  render: function () { return React.createElement(HarvestTab); } },
         { key: "stats",   label: "Stats",   icon: "fa-chart-bar", render: function () { return React.createElement(ComingSoonTab, { label: "Gallery stats" }); } },
       ]
@@ -3059,6 +3065,192 @@
             disabled: adding
           }, adding ? "Adding\u2026" : "Add mapping")
         )
+      )
+    );
+  }
+
+  // ─── QueueTab ─────────────────────────────────────────────────────────────
+
+  function QueueTab() {
+    var isMobile = useIsMobile();
+
+    var _items   = useState(null);  var items   = _items[0];   var setItems   = _items[1];
+    var _total   = useState(0);     var total   = _total[0];   var setTotal   = _total[1];
+    var _pages   = useState(1);     var pages   = _pages[0];   var setPages   = _pages[1];
+    var _page    = useState(1);     var page    = _page[0];    var setPage    = _page[1];
+    var _loading = useState(true);  var loading = _loading[0]; var setLoading = _loading[1];
+    var _busy    = useState({});    var busy    = _busy[0];    var setBusy    = _busy[1];
+
+    function load(p) {
+      setLoading(true);
+      apiGet("/queue?page=" + p)
+        .then(function (d) {
+          setItems(d.items || []);
+          setTotal(d.total || 0);
+          setPages(d.total_pages || 1);
+          setPage(p);
+          setLoading(false);
+        })
+        .catch(function () { setLoading(false); });
+    }
+
+    useEffect(function () { load(1); }, []);
+
+    function handleApprove(id) {
+      setBusy(function (b) { return Object.assign({}, b, { [id + "_approve"]: true }); });
+      apiPost("/queue/" + id + "/approve", {})
+        .then(function (d) {
+          if (d.item) {
+            toast("Item approved and published.");
+            setItems(function (prev) { return prev.filter(function (i) { return i.id !== id; }); });
+            setTotal(function (t) { return t - 1; });
+          } else {
+            toast(d.error || "Failed", "err");
+          }
+        })
+        .catch(function () { toast("Failed", "err"); })
+        .finally(function () {
+          setBusy(function (b) { var n = Object.assign({}, b); delete n[id + "_approve"]; return n; });
+        });
+    }
+
+    function handleReject(id) {
+      setBusy(function (b) { return Object.assign({}, b, { [id + "_reject"]: true }); });
+      apiPost("/queue/" + id + "/reject", {})
+        .then(function (d) {
+          if (d.ok) {
+            toast("Item rejected and removed.");
+            setItems(function (prev) { return prev.filter(function (i) { return i.id !== id; }); });
+            setTotal(function (t) { return t - 1; });
+          } else {
+            toast(d.error || "Failed", "err");
+          }
+        })
+        .catch(function () { toast("Failed", "err"); })
+        .finally(function () {
+          setBusy(function (b) { var n = Object.assign({}, b); delete n[id + "_reject"]; return n; });
+        });
+    }
+
+    if (loading) return React.createElement("div", {
+      style: { padding: "48px 0", textAlign: "center", color: "var(--t5)" }
+    }, React.createElement("i", { className: "fa-solid fa-spinner fa-spin" }));
+
+    if (items && items.length === 0) return React.createElement("div", {
+      style: { padding: "48px 24px", textAlign: "center", color: "var(--t5)", fontSize: 13 }
+    },
+      React.createElement("i", {
+        className: "fa-solid fa-check-circle",
+        style: { fontSize: 28, display: "block", marginBottom: 12, color: "var(--t5)" }
+      }),
+      "Queue is empty — no items pending approval."
+    );
+
+    return React.createElement("div", null,
+      // Header count
+      React.createElement("div", {
+        style: { fontSize: 13, color: "var(--t4)", marginBottom: 16 }
+      }, total + " item" + (total === 1 ? "" : "s") + " pending approval"),
+
+      // Item list
+      React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } },
+        items && items.map(function (item) {
+          var approving = !!busy[item.id + "_approve"];
+          var rejecting = !!busy[item.id + "_reject"];
+          var anyBusy   = approving || rejecting;
+
+          return React.createElement("div", {
+            key: item.id,
+            style: {
+              display: "flex", gap: 12, alignItems: "flex-start",
+              background: "var(--s1)", border: "0.5px solid var(--b1)",
+              borderRadius: 10, padding: 12,
+              flexDirection: isMobile ? "column" : "row"
+            }
+          },
+            // Thumbnail
+            React.createElement("div", {
+              style: {
+                width: isMobile ? "100%" : 120,
+                aspectRatio: "16/9",
+                borderRadius: 6,
+                background: "var(--s2)",
+                overflow: "hidden",
+                flexShrink: 0
+              }
+            },
+              item.thumbnail_url || item.file_url
+                ? React.createElement("img", {
+                    src: item.thumbnail_url || item.file_url,
+                    style: { width: "100%", height: "100%", objectFit: "cover", display: "block" }
+                  })
+                : React.createElement("div", {
+                    style: { width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }
+                  },
+                    React.createElement("i", { className: "fa-solid fa-image", style: { color: "var(--t5)", fontSize: 20 } })
+                  )
+            ),
+
+            // Info
+            React.createElement("div", { style: { flex: 1, minWidth: 0 } },
+              React.createElement("div", {
+                style: { fontSize: 13, fontWeight: 500, color: "var(--t1)", marginBottom: 4,
+                         whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }
+              }, item.title || React.createElement("span", { style: { color: "var(--t5)" } }, "Untitled")),
+              React.createElement("div", { style: { fontSize: 12, color: "var(--t4)", marginBottom: 4 } },
+                item.user && React.createElement("span", null, item.user.username + " · "),
+                item.media_type,
+                " · ",
+                item.inserted_at
+                  ? new Date(item.inserted_at).toLocaleDateString()
+                  : ""
+              ),
+              item.description && React.createElement("div", {
+                style: { fontSize: 12, color: "var(--t5)", marginTop: 4,
+                         overflow: "hidden", display: "-webkit-box",
+                         WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }
+              }, item.description)
+            ),
+
+            // Actions
+            React.createElement("div", { style: { display: "flex", gap: 6, flexShrink: 0, alignItems: "center" } },
+              React.createElement("button", {
+                className: "btn-primary",
+                style: { fontSize: 12, padding: "5px 14px" },
+                onClick: function () { handleApprove(item.id); },
+                disabled: anyBusy
+              },
+                React.createElement("i", { className: "fa-solid fa-check", style: { marginRight: 5 } }),
+                approving ? "Approving…" : "Approve"
+              ),
+              React.createElement("button", {
+                className: "btn-ghost",
+                style: { fontSize: 12, padding: "5px 14px", color: "var(--red)", borderColor: "rgba(239,68,68,0.3)" },
+                onClick: function () { handleReject(item.id); },
+                disabled: anyBusy
+              },
+                React.createElement("i", { className: "fa-solid fa-xmark", style: { marginRight: 5 } }),
+                rejecting ? "Rejecting…" : "Reject"
+              )
+            )
+          );
+        })
+      ),
+
+      // Pagination
+      pages > 1 && React.createElement("div", {
+        style: { display: "flex", justifyContent: "center", gap: 6, marginTop: 20 }
+      },
+        page > 1 && React.createElement("button", {
+          className: "btn-ghost", style: { fontSize: 12.5 },
+          onClick: function () { load(page - 1); }
+        }, React.createElement("i", { className: "fa-solid fa-chevron-left" })),
+        React.createElement("span", { style: { fontSize: 12.5, color: "var(--t4)", padding: "6px 10px" } },
+          page + " / " + pages),
+        page < pages && React.createElement("button", {
+          className: "btn-ghost", style: { fontSize: 12.5 },
+          onClick: function () { load(page + 1); }
+        }, React.createElement("i", { className: "fa-solid fa-chevron-right" }))
       )
     );
   }

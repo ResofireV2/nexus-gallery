@@ -14,9 +14,17 @@ defmodule NexusGallery.Items do
     media    = Keyword.get(opts, :media_type)
     uid      = Keyword.get(opts, :user_id)
     search   = Keyword.get(opts, :search)
+    queue    = Keyword.get(opts, :queue, false)
     offset   = (page - 1) * per_page
 
-    base = from i in Item, where: i.is_draft == false
+    # Queue mode: show items pending approval (is_draft=true, pending_approval=true)
+    # Normal mode: show published items only (is_draft=false, pending_approval=false)
+    base =
+      if queue do
+        from i in Item, where: i.is_draft == true and i.pending_approval == true
+      else
+        from i in Item, where: i.is_draft == false and i.pending_approval == false
+      end
     base = if media, do: from(i in base, where: i.media_type == ^media), else: base
     base = if uid,   do: from(i in base, where: i.user_id == ^uid),      else: base
     base =
@@ -217,8 +225,9 @@ defmodule NexusGallery.Items do
       width:          i.width,
       height:         i.height,
       upload_id:      uuid_str(i.upload_id),
-      source_post_id: i.source_post_id,
-      inserted_at:    i.inserted_at,
+      source_post_id:  i.source_post_id,
+      pending_approval: i.pending_approval,
+      inserted_at:     i.inserted_at,
       updated_at:     i.updated_at,
     }
   end

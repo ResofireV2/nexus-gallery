@@ -23,6 +23,7 @@ defmodule NexusGallery do
       NexusGallery.Migrations.V20260601000011CreateGalleryHarvestMappings,
       NexusGallery.Migrations.V20260601000012FixUserIdTypes,
       NexusGallery.Migrations.V20260601000013AddSourceReplyId,
+      NexusGallery.Migrations.V20260601000014AddPendingApprovalToItems,
     ]
   end
 
