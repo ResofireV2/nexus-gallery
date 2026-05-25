@@ -20,7 +20,7 @@ defmodule NexusGallery.Tags do
 
   @doc "Returns a single tag by id (string UUID), or nil."
   def get_tag(id) do
-    Repo.one(from t in Tag, where: t.id == type(^uuid_bin(id), :uuid))
+    Repo.get(Tag, id)
   end
 
   @doc "Returns a single tag by slug, or nil."
@@ -57,7 +57,7 @@ defmodule NexusGallery.Tags do
       ordered_ids
       |> Enum.with_index()
       |> Enum.each(fn {id, index} ->
-        from(t in Tag, where: t.id == type(^uuid_bin(id), :uuid))
+        from(t in Tag, where: t.id == type(^id, :binary_id))
         |> Repo.update_all(set: [position: index])
       end)
     end)
