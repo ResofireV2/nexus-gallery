@@ -672,10 +672,13 @@
               var u = prev.slice(); u[idx] = Object.assign({}, u[idx], { progress: pct }); return u;
             });
           }).then(function (r) {
+            var rawName  = entry.file.name || "";
+            var baseName = rawName.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim() || "Untitled";
             return apiPatch("/items/" + draftId, {
               file_url:     r.url,
               original_url: r.original_url,
               upload_id:    r.upload ? r.upload.id : null,
+              title:        baseName,
               is_draft:     false,
             }).then(function () {
               return apiPost("/collections/" + coll.slug + "/items", { item_id: draftId })
@@ -792,7 +795,7 @@
               var clip = entry.status === "done" ? 0 : 100 - (entry.progress || 0);
               return React.createElement("div", {
                 key: i,
-                style: { position: "relative", aspectRatio: "1/1", borderRadius: 6, overflow: "hidden", background: "var(--s3)" }
+                style: { position: "relative", aspectRatio: "16/9", borderRadius: 6, overflow: "hidden", background: "var(--s3)" }
               },
                 // Grayscale base layer
                 React.createElement("img", {
@@ -822,7 +825,7 @@
             // Add more tile
             !atMax && React.createElement("div", {
               style: {
-                aspectRatio: "1/1", borderRadius: 6,
+                aspectRatio: "16/9", borderRadius: 6,
                 border: "1.5px dashed var(--b2)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 cursor: "pointer", color: "var(--t5)", fontSize: 22,

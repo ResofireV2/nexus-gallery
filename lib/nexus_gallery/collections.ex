@@ -127,6 +127,21 @@ defmodule NexusGallery.Collections do
         from(c in Collection, where: c.id == type(^uuid_str(coll.id), :binary_id)),
         inc: [item_count: 1]
       )
+      # Auto-set cover_url from first item's file_url if collection has no cover yet
+      if is_nil(coll.cover_url) do
+        item_file_url = Repo.one(
+          from(i in NexusGallery.Item,
+            where: i.id == type(^item_id_str, :binary_id),
+            select: i.file_url)
+        )
+        if item_file_url do
+          Repo.update_all(
+            from(c in Collection,
+              where: c.id == type(^uuid_str(coll.id), :binary_id) and is_nil(c.cover_url)),
+            set: [cover_url: item_file_url]
+          )
+        end
+      end
       :ok
     end
   end
