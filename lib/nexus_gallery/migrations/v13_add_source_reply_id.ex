@@ -3,9 +3,9 @@ defmodule NexusGallery.Migrations.V13AddSourceReplyId do
 
   def change do
     alter table(:nexus_gallery_items) do
-      add :source_reply_id, :integer, null: true
+      add_if_not_exists :source_reply_id, :integer, null: true
     end
 
-    create index(:nexus_gallery_items, [:source_reply_id])
+    create_if_not_exists index(:nexus_gallery_items, [:source_reply_id])
   end
 end

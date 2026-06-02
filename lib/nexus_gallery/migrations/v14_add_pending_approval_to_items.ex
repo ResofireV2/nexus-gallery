@@ -3,9 +3,9 @@ defmodule NexusGallery.Migrations.V14AddPendingApprovalToItems do
 
   def change do
     alter table(:nexus_gallery_items) do
-      add :pending_approval, :boolean, null: false, default: false
+      add_if_not_exists :pending_approval, :boolean, null: false, default: false
     end
 
-    create index(:nexus_gallery_items, [:pending_approval])
+    create_if_not_exists index(:nexus_gallery_items, [:pending_approval])
   end
 end
