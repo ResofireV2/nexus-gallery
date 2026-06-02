@@ -10,20 +10,20 @@ defmodule NexusGallery do
   @impl true
   def migrations do
     [
-      NexusGallery.Migrations.V20260601000001CreateGalleryItems,
-      NexusGallery.Migrations.V20260601000002CreateGalleryTags,
-      NexusGallery.Migrations.V20260601000003CreateGalleryItemTags,
-      NexusGallery.Migrations.V20260601000004CreateGalleryCollections,
-      NexusGallery.Migrations.V20260601000005CreateGalleryCollectionItems,
-      NexusGallery.Migrations.V20260601000006CreateGalleryCollectionTags,
-      NexusGallery.Migrations.V20260601000007CreateGalleryRatings,
-      NexusGallery.Migrations.V20260601000008CreateGalleryComments,
-      NexusGallery.Migrations.V20260601000009CreateGallerySubscriptions,
-      NexusGallery.Migrations.V20260601000010CreateGalleryReactions,
-      NexusGallery.Migrations.V20260601000011CreateGalleryHarvestMappings,
-      NexusGallery.Migrations.V20260601000012FixUserIdTypes,
-      NexusGallery.Migrations.V20260601000013AddSourceReplyId,
-      NexusGallery.Migrations.V20260601000014AddPendingApprovalToItems,
+      NexusGallery.Migrations.V1CreateGalleryItems,
+      NexusGallery.Migrations.V2CreateGalleryTags,
+      NexusGallery.Migrations.V3CreateGalleryItemTags,
+      NexusGallery.Migrations.V4CreateGalleryCollections,
+      NexusGallery.Migrations.V5CreateGalleryCollectionItems,
+      NexusGallery.Migrations.V6CreateGalleryCollectionTags,
+      NexusGallery.Migrations.V7CreateGalleryRatings,
+      NexusGallery.Migrations.V8CreateGalleryComments,
+      NexusGallery.Migrations.V9CreateGallerySubscriptions,
+      NexusGallery.Migrations.V10CreateGalleryReactions,
+      NexusGallery.Migrations.V11CreateGalleryHarvestMappings,
+      NexusGallery.Migrations.V12FixUserIdTypes,
+      NexusGallery.Migrations.V13AddSourceReplyId,
+      NexusGallery.Migrations.V14AddPendingApprovalToItems,
     ]
   end
 
