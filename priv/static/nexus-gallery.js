@@ -304,7 +304,7 @@
           loading: "lazy"
         }),
         item.is_featured && React.createElement("div", {
-          style: { position: "absolute", top: 6, left: 6, background: "rgba(124,92,252,0.85)", color: "#fff", fontSize: 9, padding: "2px 6px", borderRadius: 4, fontWeight: 500 }
+          style: { position: "absolute", top: 6, left: 6, background: "var(--ac)", color: "#fff", fontSize: 9, padding: "2px 6px", borderRadius: 4, fontWeight: 500 }
         }, "★ Featured"),
         mediaIcon && React.createElement("div", {
           style: { position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.6)", color: "rgba(255,255,255,0.9)", fontSize: 9.5, padding: "2px 6px", borderRadius: 4, display: "flex", alignItems: "center", gap: 3 }
