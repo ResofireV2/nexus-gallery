@@ -2,7 +2,7 @@ defmodule NexusGallery.Migrations.V20260601000001CreateGalleryItems do
   use Ecto.Migration
 
   def change do
-    create table(:nexus_gallery_items, primary_key: false) do
+    create_if_not_exists table(:nexus_gallery_items, primary_key: false) do
       add :id,          :uuid, primary_key: true, null: false
       add :user_id,      :integer, null: false
       add :title,       :string
@@ -22,10 +22,10 @@ defmodule NexusGallery.Migrations.V20260601000001CreateGalleryItems do
       timestamps(type: :utc_datetime)
     end
 
-    create index(:nexus_gallery_items, [:user_id])
-    create index(:nexus_gallery_items, [:media_type])
-    create index(:nexus_gallery_items, [:is_draft])
-    create index(:nexus_gallery_items, [:is_featured])
-    create index(:nexus_gallery_items, [:inserted_at])
+    create_if_not_exists index(:nexus_gallery_items, [:user_id])
+    create_if_not_exists index(:nexus_gallery_items, [:media_type])
+    create_if_not_exists index(:nexus_gallery_items, [:is_draft])
+    create_if_not_exists index(:nexus_gallery_items, [:is_featured])
+    create_if_not_exists index(:nexus_gallery_items, [:inserted_at])
   end
 end
