@@ -203,7 +203,7 @@
             var clip    = entry.status === "done" ? 0 : 100 - entry.progress;
             var isVid   = (entry.file.type || "").startsWith("video/");
             var progress = Math.round(100 - clip);
-            return React.createElement("div", { key: i, style: { position: "relative", aspectRatio: "16/9", borderRadius: 6, overflow: "hidden", background: "var(--s3)" } },
+            return React.createElement("div", { key: i, style: { position: "relative", paddingTop: "56.25%", borderRadius: 6, overflow: "hidden", background: "var(--s3)" } },
               isVid
                 ? React.createElement("div", {
                     style: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, background: "var(--s2)" }
@@ -234,9 +234,13 @@
             );
           }),
           React.createElement("div", {
-            style: { aspectRatio: "16/9", borderRadius: 6, border: "1.5px dashed var(--b2)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--t5)", fontSize: 22 },
+            style: { position: "relative", paddingTop: "56.25%", borderRadius: 6, border: "1.5px dashed var(--b2)", cursor: "pointer" },
             onClick: function () { inputRef.current && inputRef.current.click(); }
-          }, React.createElement("i", { className: "fa-solid fa-plus" }))
+          },
+            React.createElement("div", { style: { position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t5)", fontSize: 22 } },
+              React.createElement("i", { className: "fa-solid fa-plus" })
+            )
+          )
         ),
         React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end" } },
           React.createElement("button", { className: "btn-ghost", style: { fontSize: 13 }, onClick: onClose, disabled: anyUploading }, "Cancel"),
@@ -304,7 +308,7 @@
           loading: "lazy"
         }),
         item.is_featured && React.createElement("div", {
-          style: { position: "absolute", top: 6, left: 6, background: "var(--ac)", color: "#fff", fontSize: 9, padding: "2px 6px", borderRadius: 4, fontWeight: 500 }
+          style: { position: "absolute", top: 6, left: 6, background: "rgba(124,92,252,0.85)", color: "#fff", fontSize: 9, padding: "2px 6px", borderRadius: 4, fontWeight: 500 }
         }, "★ Featured"),
         mediaIcon && React.createElement("div", {
           style: { position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.6)", color: "rgba(255,255,255,0.9)", fontSize: 9.5, padding: "2px 6px", borderRadius: 4, display: "flex", alignItems: "center", gap: 3 }

@@ -26,11 +26,7 @@ A community media gallery extension for [Nexus](https://github.com/billyrayfoss/
 
 ## Installation
 
-In the Nexus admin panel go to **Admin → Extensions → Install**, then paste the repository URL:
-
-```
-https://github.com/ResofireV2/nexus-gallery
-```
+Available in the Nexus extension registry. Go to **Admin → Extensions**, find Gallery, and click Install.
 
 ## Configuration
 
