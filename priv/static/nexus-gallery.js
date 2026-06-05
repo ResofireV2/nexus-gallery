@@ -107,10 +107,25 @@
     function handleFiles(files) {
       var idx0 = entries.length;
       var newEntries = Array.from(files).map(function (f) {
-        return { file: f, previewUrl: URL.createObjectURL(f), status: "pending", progress: 0,
+        return { file: f, previewUrl: null, status: "pending", progress: 0,
                  url: null, originalUrl: null, uploadId: null, error: null, draftId: null };
       });
       setEntries(function (prev) { return prev.concat(newEntries); });
+      // Generate data: URL previews via FileReader (CSP-safe — no blob: URLs)
+      newEntries.forEach(function (entry, i) {
+        if (!(entry.file.type || "").startsWith("video/")) {
+          var reader = new FileReader();
+          var capturedIdx = idx0 + i;
+          reader.onload = function (e) {
+            setEntries(function (prev) {
+              var u = prev.slice();
+              if (u[capturedIdx]) u[capturedIdx] = Object.assign({}, u[capturedIdx], { previewUrl: e.target.result });
+              return u;
+            });
+          };
+          reader.readAsDataURL(entry.file);
+        }
+      });
       newEntries.forEach(function (entry, i) { startUpload(idx0 + i, entry); });
     }
 
@@ -227,8 +242,8 @@
                     }, entry.status === "pending" ? "Pending…" : progress + "%")
                   )
                 : React.createElement(React.Fragment, null,
-                    React.createElement("img", { src: entry.previewUrl, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "grayscale(1)" } }),
-                    React.createElement("img", { src: entry.previewUrl, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", clipPath: "inset(" + clip + "% 0 0 0)", transition: "clip-path 0.1s linear" } })
+                    entry.previewUrl && React.createElement("img", { src: entry.previewUrl, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "grayscale(1)" } }),
+                    entry.previewUrl && React.createElement("img", { src: entry.previewUrl, style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", clipPath: "inset(" + clip + "% 0 0 0)", transition: "clip-path 0.1s linear" } })
                   ),
               entry.status === "error" && React.createElement("div", { style: { position: "absolute", inset: 0, background: "rgba(248,113,113,0.7)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#fff", padding: 4, textAlign: "center" } }, entry.error || "Failed")
             );
@@ -335,14 +350,16 @@
 
   function generateVideoThumbnail(file) {
     return new Promise(function (resolve) {
-      var url   = URL.createObjectURL(file);
-      var video = document.createElement("video");
-      video.preload  = "metadata";
-      video.muted    = true;
-      video.playsInline = true;
-      video.src = url;
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var url   = e.target.result;
+        var video = document.createElement("video");
+        video.preload  = "metadata";
+        video.muted    = true;
+        video.playsInline = true;
+        video.src = url;
 
-      function cleanup() { URL.revokeObjectURL(url); }
+        function cleanup() {}
 
       video.addEventListener("loadedmetadata", function () {
         video.currentTime = Math.min(1, video.duration || 0);
@@ -365,10 +382,13 @@
         }
       });
 
-      video.addEventListener("error", function () { cleanup(); resolve(null); });
+      video.addEventListener("error", function () { resolve(null); });
 
-      // Fallback: if seeked never fires within 3s, give up
-      setTimeout(function () { cleanup(); resolve(null); }, 3000);
+        // Fallback: if seeked never fires within 3s, give up
+        setTimeout(function () { resolve(null); }, 3000);
+      };
+      reader.onerror = function () { resolve(null); };
+      reader.readAsDataURL(file);
     });
   }
 
@@ -937,9 +957,22 @@
       if (!arr.length) return;
       var idx0 = entries.length;
       var newEntries = arr.map(function (f) {
-        return { file: f, previewUrl: URL.createObjectURL(f), status: "pending", progress: 0 };
+        return { file: f, previewUrl: null, status: "pending", progress: 0 };
       });
       setEntries(function (prev) { return prev.concat(newEntries); });
+      // Generate data: URL previews via FileReader (CSP-safe)
+      newEntries.forEach(function (entry, i) {
+        var reader = new FileReader();
+        var capturedIdx = idx0 + i;
+        reader.onload = function (e) {
+          setEntries(function (prev) {
+            var u = prev.slice();
+            if (u[capturedIdx]) u[capturedIdx] = Object.assign({}, u[capturedIdx], { previewUrl: e.target.result });
+            return u;
+          });
+        };
+        reader.readAsDataURL(entry.file);
+      });
       newEntries.forEach(function (entry, i) { startUpload(idx0 + i, entry); });
     }
 
@@ -1079,15 +1112,15 @@
               var clip = entry.status === "done" ? 0 : 100 - (entry.progress || 0);
               return React.createElement("div", {
                 key: i,
-                style: { position: "relative", aspectRatio: "16/9", borderRadius: 6, overflow: "hidden", background: "var(--s3)" }
+                style: { position: "relative", paddingTop: "56.25%", borderRadius: 6, overflow: "hidden", background: "var(--s3)" }
               },
-                // Grayscale base layer
-                React.createElement("img", {
+                // Grayscale base layer — only render once previewUrl is ready
+                entry.previewUrl && React.createElement("img", {
                   src: entry.previewUrl,
                   style: { position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "grayscale(1)" }
                 }),
                 // Color layer revealed top-down as progress increases
-                React.createElement("img", {
+                entry.previewUrl && React.createElement("img", {
                   src: entry.previewUrl,
                   style: {
                     position: "absolute", inset: 0, width: "100%", height: "100%",
