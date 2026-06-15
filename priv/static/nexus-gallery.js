@@ -441,7 +441,7 @@
 
     return React.createElement("div", {
       style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9000 },
-      onClick: function (e) { if (e.target === e.currentTarget && !saving) onClose(); }
+      onMouseDown: function (e) { if (e.target === e.currentTarget && !saving) onClose(); }
     },
       React.createElement("div", {
         style: { background: "var(--s2)", border: "0.5px solid var(--b2)", borderRadius: 14, padding: 24, width: 480, maxWidth: "calc(100vw - 32px)", display: "flex", flexDirection: "column", gap: 16 }
@@ -1030,7 +1030,7 @@
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: 16,
       },
-      onClick: function (e) { if (e.target === e.currentTarget && !anyUploading) onClose(); }
+      onMouseDown: function (e) { if (e.target === e.currentTarget && !anyUploading) onClose(); }
     },
       React.createElement("div", {
         style: {
