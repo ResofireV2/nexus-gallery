@@ -661,7 +661,7 @@
           sorts.map(function (s) {
             return React.createElement("div", {
               key: s.key, onClick: function () { handleSortChange(s.key); },
-              style: { fontSize: 11.5, padding: "3px 10px", borderRadius: 20, border: "0.5px solid " + (sort === s.key ? "var(--ac)" : "var(--b2)"), background: sort === s.key ? "var(--ac)" : "transparent", color: sort === s.key ? "#fff" : "var(--t4)", cursor: "pointer" }
+              style: { fontSize: 11.5, padding: "3px 10px", borderRadius: 20, border: "0.5px solid " + (sort === s.key ? "var(--ac)" : "var(--b2)"), background: sort === s.key ? "var(--ac)" : "transparent", color: sort === s.key ? "var(--ac-on)" : "var(--t4)", cursor: "pointer" }
             }, s.label);
           }),
           React.createElement("div", { style: { width: "0.5px", height: 16, background: "var(--b2)", margin: "0 2px", flexShrink: 0 } }),
